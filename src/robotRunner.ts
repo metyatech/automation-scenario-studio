@@ -3,8 +3,17 @@ import { dirname, join, parse, resolve } from "node:path";
 import { spawn, type ChildProcess } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
-import { renderMarkdownFromArtifacts } from "@metyatech/automation-scenario-renderer";
-import type { RunArtifacts } from "@metyatech/automation-scenario-spec";
+import {
+  annotateImage,
+  annotateVideo,
+  renderMarkdownFromArtifacts,
+} from "@metyatech/automation-scenario-renderer";
+import type {
+  AnnotationSpec,
+  RunArtifacts,
+  StepArtifact,
+  VideoTimelineEvent,
+} from "@metyatech/automation-scenario-spec";
 
 export type RunRobotCommandOptions = {
   suitePath: string;
@@ -71,7 +80,12 @@ export async function runRobotCommand(
 
   const artifacts = JSON.parse(
     await readFile(artifactsPath, "utf8"),
-  ) as RunArtifacts;
+  ) as RunArtifacts & { annotationsApplied?: boolean };
+
+  if (!artifacts.annotationsApplied) {
+    await annotateStepImages(artifacts.steps);
+    artifacts.videoPath = await annotateStepVideo(artifacts, outputDir);
+  }
 
   const markdownPath = resolve(
     options.markdownPath ?? join(outputDir, `${artifacts.scenarioId}.md`),
@@ -85,6 +99,100 @@ export async function runRobotCommand(
     videoPath: artifacts.videoPath ?? null,
     outputDir,
   };
+}
+
+async function annotateStepImages(steps: StepArtifact[]): Promise<void> {
+  for (const step of steps) {
+    if (isDrawableAnnotation(step.annotation)) {
+      await annotateImage(step.imagePath, step.annotation);
+    }
+  }
+}
+
+async function annotateStepVideo(
+  artifacts: RunArtifacts,
+  outputDir: string,
+): Promise<string | undefined> {
+  if (!artifacts.rawVideoPath) {
+    return artifacts.videoPath;
+  }
+
+  const events = toTimelineEvents(artifacts.steps);
+  if (events.length === 0) {
+    return artifacts.videoPath ?? artifacts.rawVideoPath;
+  }
+
+  const annotatedPath = join(
+    outputDir,
+    "video",
+    `${artifacts.scenarioId}-annotated.mp4`,
+  );
+  await annotateVideo(artifacts.rawVideoPath, annotatedPath, events);
+  return annotatedPath;
+}
+
+export function toTimelineEvents(steps: StepArtifact[]): VideoTimelineEvent[] {
+  const firstStartedAtMs = steps
+    .map((step) => step.startedAtMs)
+    .filter((value): value is number => typeof value === "number")
+    .sort((a, b) => a - b)[0];
+
+  if (typeof firstStartedAtMs !== "number") {
+    return [];
+  }
+
+  return steps
+    .map((step) => toTimelineEvent(step, firstStartedAtMs))
+    .filter((event): event is VideoTimelineEvent => Boolean(event));
+}
+
+function toTimelineEvent(
+  step: StepArtifact,
+  runStartMs: number,
+): VideoTimelineEvent | undefined {
+  if (
+    !isDrawableAnnotation(step.annotation) ||
+    typeof step.startedAtMs !== "number" ||
+    typeof step.endedAtMs !== "number"
+  ) {
+    return undefined;
+  }
+
+  const startSeconds = toSeconds(step.startedAtMs - runStartMs);
+  const endSeconds = toSeconds(
+    Math.max(step.endedAtMs - runStartMs, step.startedAtMs - runStartMs + 1000),
+  );
+
+  if (step.annotation.type === "click") {
+    return {
+      type: "click",
+      startSeconds,
+      endSeconds,
+      box: step.annotation.box,
+    };
+  }
+
+  return {
+    type: "dragDrop",
+    startSeconds,
+    endSeconds,
+    from: step.annotation.from,
+    to: step.annotation.to,
+  };
+}
+
+export function isDrawableAnnotation(
+  annotation: AnnotationSpec | undefined,
+): annotation is Extract<AnnotationSpec, { type: "click" | "dragDrop" }> {
+  if (!annotation) {
+    return false;
+  }
+
+  return annotation.type === "click" || annotation.type === "dragDrop";
+}
+
+function toSeconds(milliseconds: number): number {
+  return Number((milliseconds / 1000).toFixed(2));
 }
 
 function startScreenRecording(outputPath: string): ChildProcess {

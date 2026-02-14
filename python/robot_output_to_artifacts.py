@@ -13,7 +13,12 @@ from typing import Any
 from robot.api import ExecutionResult, ResultVisitor
 
 
-DOC_KEYWORDS = {"Doc Web Step", "Doc Desktop Step"}
+DOC_KEYWORDS = {
+    "Doc Web Step",
+    "Doc Web Click Step",
+    "Doc Web Drag Step",
+    "Doc Desktop Step",
+}
 
 
 def parse_args() -> argparse.Namespace:
@@ -87,7 +92,33 @@ class DocStepVisitor(ResultVisitor):
         if end_ms is not None:
             step["endedAtMs"] = end_ms
 
+        metadata = extract_docmeta(keyword)
+        if metadata:
+            step.update(metadata)
+
         self.steps.append(step)
+
+
+def extract_docmeta(keyword) -> dict[str, Any]:
+    messages = getattr(keyword, "messages", [])
+    for message in messages:
+        text = getattr(message, "message", "")
+        if not isinstance(text, str) or not text.startswith("DOCMETA:"):
+            continue
+
+        payload = text[len("DOCMETA:") :].strip()
+        if not payload:
+            continue
+
+        try:
+            parsed = json.loads(payload)
+        except json.JSONDecodeError:
+            continue
+
+        if isinstance(parsed, dict):
+            return parsed
+
+    return {}
 
 
 def main() -> int:
@@ -114,6 +145,7 @@ def main() -> int:
             "steps": manifest.get("steps", []),
             "videoPath": manifest.get("videoPath"),
             "rawVideoPath": manifest.get("rawVideoPath"),
+            "annotationsApplied": True,
         }
     else:
         visitor = DocStepVisitor(output_dir)
@@ -125,8 +157,7 @@ def main() -> int:
             "steps": visitor.steps,
         }
 
-    if args.video_path and Path(args.video_path).exists() and not artifacts.get("videoPath"):
-        artifacts["videoPath"] = args.video_path
+    if args.video_path and Path(args.video_path).exists() and not artifacts.get("rawVideoPath"):
         artifacts["rawVideoPath"] = args.video_path
 
     artifacts_json.parent.mkdir(parents=True, exist_ok=True)

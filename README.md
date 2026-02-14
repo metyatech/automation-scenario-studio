@@ -40,6 +40,9 @@ Robot execution prerequisites:
 python -m pip install robotframework robotframework-seleniumlibrary selenium
 ```
 
+Annotation metadata can be emitted from Robot keywords by logging `DOCMETA:<json>` in `output.xml`.
+Built-in renderer currently draws `click` and `dragDrop`, and the metadata structure is extensible for future annotation types.
+
 ## Development
 
 ```bash
