@@ -9,6 +9,7 @@ This package composes:
 - `@metyatech/automation-scenario-runtime` for execution
 - `@metyatech/automation-scenario-renderer` for markdown and media outputs
 - `@metyatech/automation-scenario-spec` for schema validation
+- Robot Framework CLI for `.robot` suites
 
 ## Install
 
@@ -21,14 +22,23 @@ npm install @metyatech/automation-scenario-studio
 ```bash
 automation-scenario validate --scenario ./automation/scenarios/web-example.yaml
 automation-scenario run --scenario ./automation/scenarios/web-example.yaml --output ./artifacts/web-example --markdown ./docs/controls/auto-web-example.md
+automation-scenario run-robot --suite ./automation/robot/web-example.robot --output ./artifacts/web-example --markdown ./docs/controls/auto-web-example.md
 ```
 
 Parameters:
 
 - `--scenario` (required): scenario YAML path
+- `--suite` (required for `run-robot`): Robot Framework suite path
 - `--only` (optional): execute a single step by id
 - `--output` (optional): artifact directory override
 - `--markdown` (optional): markdown output path override
+- `--record-video` (optional): `true`/`false` for desktop recording in `run-robot`
+
+Robot execution prerequisites:
+
+```bash
+python -m pip install robotframework robotframework-seleniumlibrary selenium
+```
 
 ## Development
 

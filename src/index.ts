@@ -6,6 +6,7 @@ import {
   loadScenario,
   runScenario,
 } from "@metyatech/automation-scenario-runtime";
+import { runRobotCommand } from "./robotRunner.js";
 
 export type RunCommandOptions = {
   scenarioPath: string;
@@ -55,3 +56,5 @@ export async function validateScenarioCommand(
     steps: scenario.steps.length,
   };
 }
+
+export { runRobotCommand };
