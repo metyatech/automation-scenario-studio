@@ -100,25 +100,28 @@ class DocStepVisitor(ResultVisitor):
 
 
 def extract_docmeta(keyword) -> dict[str, Any]:
-    messages = getattr(keyword, "messages", [])
-    for message in messages:
-        text = getattr(message, "message", "")
-        if not isinstance(text, str) or not text.startswith("DOCMETA:"):
-            continue
-
+    for text in iter_docmeta_messages(keyword):
         payload = text[len("DOCMETA:") :].strip()
         if not payload:
             continue
-
         try:
             parsed = json.loads(payload)
         except json.JSONDecodeError:
             continue
-
         if isinstance(parsed, dict):
             return parsed
-
     return {}
+
+
+def iter_docmeta_messages(node):
+    messages = getattr(node, "messages", [])
+    for message in messages:
+        text = getattr(message, "message", "")
+        if isinstance(text, str) and text.startswith("DOCMETA:"):
+            yield text
+
+    for child in getattr(node, "body", []):
+        yield from iter_docmeta_messages(child)
 
 
 def main() -> int:
