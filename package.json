@@ -1,7 +1,7 @@
 {
   "name": "@metyatech/automation-scenario-studio",
   "version": "0.1.0",
-  "description": "CLI entrypoint for recording, editing, validating, and running automation scenarios",
+  "description": "CLI entrypoint for running Robot Framework suites and generating guidebook artifacts",
   "type": "module",
   "bin": {
     "automation-scenario": "dist/src/cli.js"
@@ -28,9 +28,7 @@
     "run": "tsx src/cli.ts"
   },
   "dependencies": {
-    "@metyatech/automation-scenario-renderer": "github:metyatech/automation-scenario-renderer#main",
-    "@metyatech/automation-scenario-runtime": "github:metyatech/automation-scenario-runtime#main",
-    "@metyatech/automation-scenario-spec": "github:metyatech/automation-scenario-spec#main"
+    "@metyatech/automation-scenario-renderer": "github:metyatech/automation-scenario-renderer#main"
   },
   "devDependencies": {
     "@types/node": "^24.5.2",

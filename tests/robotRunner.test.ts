@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import type { StepArtifact } from "@metyatech/automation-scenario-spec";
+import type { StepArtifact } from "../src/types.js";
 import {
   buildConverterCommandArgs,
   buildRobotCommandArgs,

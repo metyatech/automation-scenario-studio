@@ -13,7 +13,7 @@ import type {
   RunArtifacts,
   StepArtifact,
   VideoTimelineEvent,
-} from "@metyatech/automation-scenario-spec";
+} from "./types.js";
 
 export type RunRobotCommandOptions = {
   suitePath: string;
