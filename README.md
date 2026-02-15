@@ -1,12 +1,16 @@
 # automation-scenario-studio
 
-CLI entrypoint for scenario execution and guidebook artifact generation.
+CLI/runtime package for:
+
+- loading `automation-scenario-spec` v2 scenarios
+- generating Robot Framework suites from scenario steps
+- executing Robot and generating markdown + annotated images/videos
 
 ## Overview
 
 This package composes:
 
-- `@metyatech/automation-scenario-renderer` for markdown and media outputs
+- `@metyatech/automation-scenario-renderer` for markdown/media outputs
 - Robot Framework CLI for generated `.robot` suites
 
 ## Install
@@ -19,6 +23,9 @@ npm install @metyatech/automation-scenario-studio
 
 ```bash
 automation-scenario run-scenario --scenario ./automation/scenarios/web-example.scenario.json --output ./artifacts/web-example --markdown ./docs/controls/auto-web-example.md
+
+# profile + variable override
+automation-scenario run-scenario --scenario ./automation/scenarios/unity.scenario.json --profile docs --var unity_window_hint=Unity --var menu_path=Tools/Build
 ```
 
 Parameters:
@@ -27,12 +34,18 @@ Parameters:
 - `--output` (optional): artifact directory override
 - `--markdown` (optional): markdown output path override
 - `--record-video` (optional): `true`/`false` for desktop recording in `run-scenario`
+- `--profile` (optional): profile name from scenario `profiles`
+- `--var` (optional, repeatable): runtime variable override in `key=value` format
 
 Scenario format:
 
 - JSON schema repository: `metyatech/automation-scenario-spec`
-- Supported targets: `web`, `unity`
-- Supported actions: `open_url`, `click`, `drag`, `type`, `wait`, `shortcut`, `menu`, `keys`, `screenshot`
+- Supported schema version: `2.0.0`
+- Supported targets for Robot generation: `web`, `unity`
+- v2 action steps:
+  - web: `open_url`, `click`, `drag_drop`, `type_text`, `wait_for`, `press_keys`, `screenshot`
+  - unity: `click`, `drag_drop`, `type_text`, `wait_for`, `press_keys`, `open_menu`, `screenshot`
+- v2 `control` steps are preserved in spec, but Robot export fails fast on unsupported control actions.
 
 Robot execution prerequisites:
 

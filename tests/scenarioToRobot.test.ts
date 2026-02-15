@@ -20,9 +20,9 @@ describe("scenario spec", () => {
 });
 
 describe("scenario to robot", () => {
-  it("renders web scenario with doc keywords", () => {
+  it("renders web scenario with v2 action steps", () => {
     const scenario: AutomationScenario = {
-      schema_version: "1.0.0",
+      schema_version: "2.0.0",
       scenario_id: "web-example",
       name: "Web Example",
       target: "web",
@@ -30,22 +30,28 @@ describe("scenario to robot", () => {
         start_url: "https://example.com",
         browser: "chrome",
       },
+      variables: [],
       steps: [
         {
           id: "open-example",
           title: "Open example.com",
           description: "Open top page.",
+          kind: "action",
           action: "open_url",
-          params: {
+          input: {
             url: "https://example.com",
           },
         },
         {
           id: "click-link",
           title: "Click link",
+          kind: "action",
           action: "click",
-          params: {
-            locator: "css:a",
+          target: {
+            strategy: "web",
+            web: {
+              css: "a",
+            },
           },
         },
       ],
@@ -59,32 +65,52 @@ describe("scenario to robot", () => {
     expect(suite).toContain("Close All Browsers");
   });
 
-  it("renders unity scenario with launch mode", () => {
+  it("renders unity scenario with launch mode and nested group title", () => {
     const scenario: AutomationScenario = {
-      schema_version: "1.0.0",
+      schema_version: "2.0.0",
       scenario_id: "unity-example",
       name: "Unity Example",
       target: "unity",
       metadata: {
-        unity_execution_mode: "launch",
-        unity_project_path: "D:/projects/sample",
         target_window_hint: "Unity",
       },
+      execution: {
+        mode: "launch",
+      },
+      variables: [
+        {
+          id: "unity_project_path",
+          type: "path",
+          default: "D:/projects/sample",
+        },
+      ],
       steps: [
         {
-          id: "click-scene",
-          title: "Click scene",
-          action: "click",
-          params: {
-            x_ratio: 0.5,
-            y_ratio: 0.5,
-          },
+          id: "project-setup",
+          title: "Project Setup",
+          kind: "group",
+          steps: [
+            {
+              id: "click-scene",
+              title: "Click scene",
+              kind: "action",
+              action: "click",
+              target: {
+                strategy: "uia",
+                uia: {
+                  title: "Scene",
+                  control_type: "Pane",
+                },
+              },
+            },
+          ],
         },
         {
           id: "save",
           title: "Save",
-          action: "shortcut",
-          params: {
+          kind: "action",
+          action: "press_keys",
+          input: {
             shortcut: "CTRL+S",
           },
         },
@@ -99,8 +125,33 @@ describe("scenario to robot", () => {
     expect(suite).toContain(
       "Start Unity Editor    project_path=${unity_project_path}",
     );
-    expect(suite).toContain("Doc Desktop Step    click-scene");
-    expect(suite).toContain("Unity Click Relative And Emit");
-    expect(suite).toContain("Doc Desktop Step    save");
+    expect(suite).toContain("${annotation}=    Click Unity Element");
+    expect(suite).toContain(
+      "Doc Desktop Step    save    Save    ${EMPTY}    Send Unity Shortcut    CTRL+S",
+    );
+  });
+
+  it("fails export when control step is present", () => {
+    const scenario: AutomationScenario = {
+      schema_version: "2.0.0",
+      scenario_id: "control-example",
+      name: "Control Example",
+      target: "unity",
+      metadata: {},
+      variables: [],
+      steps: [
+        {
+          id: "repeat",
+          title: "Repeat",
+          kind: "control",
+          control: "repeat",
+          count: 2,
+        },
+      ],
+    };
+
+    expect(() => generateRobotSuiteFromScenario(scenario)).toThrow(
+      "Unsupported control step",
+    );
   });
 });

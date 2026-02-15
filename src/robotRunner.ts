@@ -29,6 +29,8 @@ export type RunScenarioCommandOptions = {
   outputDir?: string;
   markdownPath?: string;
   recordVideo?: boolean;
+  profile?: string;
+  variables?: Record<string, unknown>;
 };
 
 export async function runScenarioCommand(
@@ -40,7 +42,10 @@ export async function runScenarioCommand(
   outputDir: string;
 }> {
   const scenarioPath = resolve(options.scenarioPath);
-  const scenario = await loadScenarioFile(scenarioPath);
+  const scenario = await loadScenarioFile(scenarioPath, {
+    profile: options.profile,
+    variables: options.variables,
+  });
   const outputDir = resolve(
     options.outputDir ?? join("artifacts", scenario.scenario_id),
   );

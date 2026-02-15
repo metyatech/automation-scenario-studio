@@ -1,24 +1,26 @@
-import type { AutomationScenario, ScenarioStep } from "./scenarioSpec.js";
+import type {
+  AutomationScenario,
+  ScenarioStep,
+  ScenarioStepAction,
+} from "./scenarioSpec.js";
 
 const WEB_ACTIONS = new Set([
   "open_url",
   "click",
-  "drag",
-  "type",
-  "wait",
-  "keys",
-  "shortcut",
+  "drag_drop",
+  "type_text",
+  "wait_for",
+  "press_keys",
   "screenshot",
 ]);
 
 const UNITY_ACTIONS = new Set([
   "click",
-  "drag",
-  "type",
-  "wait",
-  "keys",
-  "shortcut",
-  "menu",
+  "drag_drop",
+  "type_text",
+  "wait_for",
+  "press_keys",
+  "open_menu",
   "screenshot",
 ]);
 
@@ -36,11 +38,11 @@ export function generateRobotSuiteFromScenario(
 }
 
 function generateWebRobotSuite(scenario: AutomationScenario): string {
-  const startUrl = toRobotCell(
-    getMetadataString(scenario, "start_url", "about:blank"),
+  const startUrl = toRobotCell(readStartUrl(scenario));
+  const browser = toRobotCell(readBrowser(scenario));
+  const stepLines = flattenSteps(scenario.steps).flatMap((step) =>
+    toWebStepLines(step),
   );
-  const browser = toRobotCell(getMetadataString(scenario, "browser", "chrome"));
-  const stepLines = scenario.steps.flatMap((step) => toWebStepLines(step));
 
   return [
     "*** Settings ***",
@@ -69,16 +71,12 @@ function generateWebRobotSuite(scenario: AutomationScenario): string {
 }
 
 function generateUnityRobotSuite(scenario: AutomationScenario): string {
-  const unityMode = normalizeUnityMode(
-    getMetadataString(scenario, "unity_execution_mode", "attach"),
+  const unityMode = normalizeUnityMode(readUnityExecutionMode(scenario));
+  const unityProjectPath = toRobotOptionalCell(readUnityProjectPath(scenario));
+  const unityWindowHint = toRobotCell(readUnityWindowHint(scenario));
+  const stepLines = flattenSteps(scenario.steps).flatMap((step) =>
+    toUnityStepLines(step),
   );
-  const unityProjectPath = toRobotOptionalCell(
-    getMetadataString(scenario, "unity_project_path", ""),
-  );
-  const unityWindowHint = toRobotCell(
-    getMetadataString(scenario, "target_window_hint", "Unity"),
-  );
-  const stepLines = scenario.steps.flatMap((step) => toUnityStepLines(step));
 
   return [
     "*** Settings ***",
@@ -101,7 +99,6 @@ function generateUnityRobotSuite(scenario: AutomationScenario): string {
     "        ELSE",
     "            Attach To Running Unity Editor    window_hint=${unity_window_hint}",
     "        END",
-    "        Focus Unity Window",
     ...stepLines,
     "    FINALLY",
     "        IF    '${unity_mode}' == 'launch'",
@@ -115,45 +112,74 @@ function generateUnityRobotSuite(scenario: AutomationScenario): string {
   ].join("\n");
 }
 
-function toWebStepLines(step: ScenarioStep): string[] {
+function flattenSteps(
+  steps: ScenarioStep[],
+  parentTitles: string[] = [],
+): ScenarioStepAction[] {
+  const output: ScenarioStepAction[] = [];
+  for (const step of steps) {
+    if (step.kind === "group") {
+      output.push(...flattenSteps(step.steps, [...parentTitles, step.title]));
+      continue;
+    }
+    if (step.kind === "control") {
+      throw new Error(
+        `Unsupported control step for Robot export: ${step.control} (${step.id})`,
+      );
+    }
+    const titlePrefix =
+      parentTitles.length > 0 ? `${parentTitles.join(" > ")} > ` : "";
+    output.push({ ...step, title: `${titlePrefix}${step.title}` });
+  }
+  return output;
+}
+
+function toWebStepLines(step: ScenarioStepAction): string[] {
   ensureActionSupported(step, WEB_ACTIONS, "web");
   const id = toRobotCell(step.id);
   const title = toRobotCell(step.title);
   const description = toRobotOptionalCell(step.description ?? "");
 
   if (step.action === "open_url") {
+    const url = requiredStringFromInput(step, "url");
     return [
-      `        Doc Web Step    ${id}    ${title}    ${description}    Go To    ${requiredStringParam(step, "url")}`,
+      `        Doc Web Step    ${id}    ${title}    ${description}    Go To    ${url}`,
     ];
   }
   if (step.action === "click") {
+    const locator = resolveWebLocator(step.target);
     return [
-      `        Doc Web Click Step    ${id}    ${title}    ${description}    ${requiredStringParam(step, "locator")}`,
+      `        Doc Web Click Step    ${id}    ${title}    ${description}    ${locator}`,
     ];
   }
-  if (step.action === "drag") {
+  if (step.action === "drag_drop") {
+    const sourceLocator = resolveWebLocator(
+      readNestedTarget(step.input, "source"),
+    );
+    const targetLocator = resolveWebLocator(step.target);
     return [
-      `        Doc Web Drag Step    ${id}    ${title}    ${description}    ${requiredStringParam(step, "source_locator")}    ${requiredStringParam(step, "target_locator")}`,
+      `        Doc Web Drag Step    ${id}    ${title}    ${description}    ${sourceLocator}    ${targetLocator}`,
     ];
   }
-  if (step.action === "type") {
+  if (step.action === "type_text") {
+    const locator = resolveWebLocator(step.target);
+    const text = requiredStringFromInput(step, "text");
     return [
-      `        Doc Web Step    ${id}    ${title}    ${description}    Input Text    ${requiredStringParam(step, "locator")}    ${requiredStringParam(step, "text")}`,
+      `        Doc Web Step    ${id}    ${title}    ${description}    Input Text    ${locator}    ${text}`,
     ];
   }
-  if (step.action === "wait") {
+  if (step.action === "wait_for") {
+    const seconds = numberFromInput(step, "seconds", 1);
     return [
-      `        Doc Web Step    ${id}    ${title}    ${description}    Sleep    ${numberParam(step, "seconds", 1)}`,
+      `        Doc Web Step    ${id}    ${title}    ${description}    Sleep    ${seconds}`,
     ];
   }
-  if (step.action === "keys") {
+  if (step.action === "press_keys") {
+    const shortcut = readStringFromInput(step, "shortcut");
+    const keys = readStringFromInput(step, "keys");
+    const value = toRobotCell(shortcut || keys || "{ENTER}");
     return [
-      `        Doc Web Step    ${id}    ${title}    ${description}    Press Keys    NONE    ${requiredStringParam(step, "keys")}`,
-    ];
-  }
-  if (step.action === "shortcut") {
-    return [
-      `        Doc Web Step    ${id}    ${title}    ${description}    Press Keys    NONE    ${requiredStringParam(step, "shortcut")}`,
+      `        Doc Web Step    ${id}    ${title}    ${description}    Press Keys    NONE    ${value}`,
     ];
   }
   if (step.action === "screenshot") {
@@ -165,48 +191,99 @@ function toWebStepLines(step: ScenarioStep): string[] {
   throw new Error(`Unsupported web action: ${step.action}`);
 }
 
-function toUnityStepLines(step: ScenarioStep): string[] {
+function toUnityStepLines(step: ScenarioStepAction): string[] {
   ensureActionSupported(step, UNITY_ACTIONS, "unity");
   const id = toRobotCell(step.id);
   const title = toRobotCell(step.title);
   const description = toRobotOptionalCell(step.description ?? "");
 
   if (step.action === "click") {
+    const strategy = readTargetStrategy(step.target);
+    if (strategy === "unity_hierarchy") {
+      const path = readUnityHierarchyPath(step.target);
+      return [
+        `        \${annotation}=    Wait Until Keyword Succeeds    45 sec    1 sec    Select Unity Hierarchy Object    hierarchy_path=${path}    timeout_seconds=4.0`,
+        `        Wait For Seconds    ${waitSecondsFromTiming(step, 0.0)}`,
+        "        Emit Annotation Metadata    ${annotation}",
+      ];
+    }
+    if (strategy === "uia") {
+      const selectorArgs = unitySelectorArgs(step.target);
+      return [
+        `        \${annotation}=    Click Unity Element${selectorArgs}`,
+        `        Wait For Seconds    ${waitSecondsFromTiming(step, 0.0)}`,
+        "        Emit Annotation Metadata    ${annotation}",
+      ];
+    }
+    if (strategy === "coordinate") {
+      const coordinate = requiredCoordinate(step.target);
+      return [
+        `        Doc Desktop Step    ${id}    ${title}    ${description}    Unity Click Relative And Emit    ${coordinate.xRatio}    ${coordinate.yRatio}    180    48    ${waitSecondsFromTiming(step, 0.8)}`,
+      ];
+    }
+    throw new Error(`Unsupported unity click target strategy: ${strategy}`);
+  }
+
+  if (step.action === "drag_drop") {
+    const source = readNestedTarget(step.input, "source");
+    const sourceStrategy = readTargetStrategy(source);
+    const targetStrategy = readTargetStrategy(step.target);
+    if (sourceStrategy === "uia" && targetStrategy === "uia") {
+      const sourceArgs = unitySelectorArgs(source, "source_");
+      const targetArgs = unitySelectorArgs(step.target, "target_");
+      return [
+        `        \${annotation}=    Drag Unity Element To Element${sourceArgs}${targetArgs}`,
+        `        Wait For Seconds    ${waitSecondsFromTiming(step, 0.0)}`,
+        "        Emit Annotation Metadata    ${annotation}",
+      ];
+    }
+    if (sourceStrategy === "coordinate" && targetStrategy === "coordinate") {
+      const sourceCoordinate = requiredCoordinate(source);
+      const targetCoordinate = requiredCoordinate(step.target);
+      return [
+        `        Doc Desktop Step    ${id}    ${title}    ${description}    Unity Drag Relative And Emit    ${sourceCoordinate.xRatio}    ${sourceCoordinate.yRatio}    ${targetCoordinate.xRatio}    ${targetCoordinate.yRatio}    ${waitSecondsFromTiming(step, 0.8)}`,
+      ];
+    }
+    throw new Error(
+      `Unsupported unity drag_drop selector strategy pair: ${sourceStrategy} -> ${targetStrategy}`,
+    );
+  }
+
+  if (step.action === "type_text") {
+    const text = requiredStringFromInput(step, "text");
     return [
-      `        Doc Desktop Step    ${id}    ${title}    ${description}    Unity Click Relative And Emit    ${numberParam(step, "x_ratio", 0.5)}    ${numberParam(step, "y_ratio", 0.5)}    ${numberParam(step, "box_width", 180)}    ${numberParam(step, "box_height", 48)}    ${numberParam(step, "wait_seconds", 0.8)}`,
+      `        Doc Desktop Step    ${id}    ${title}    ${description}    Type Unity Text    ${text}`,
     ];
   }
-  if (step.action === "drag") {
+  if (step.action === "wait_for") {
+    const seconds = numberFromInput(step, "seconds", 1);
     return [
-      `        Doc Desktop Step    ${id}    ${title}    ${description}    Unity Drag Relative And Emit    ${numberParam(step, "from_x_ratio", 0.2)}    ${numberParam(step, "from_y_ratio", 0.4)}    ${numberParam(step, "to_x_ratio", 0.7)}    ${numberParam(step, "to_y_ratio", 0.4)}    ${numberParam(step, "wait_seconds", 0.8)}`,
+      `        Doc Desktop Step    ${id}    ${title}    ${description}    Wait For Seconds    ${seconds}`,
     ];
   }
-  if (step.action === "type") {
+  if (step.action === "press_keys") {
+    const shortcut = readStringFromInput(step, "shortcut");
+    if (shortcut !== "") {
+      return [
+        `        Doc Desktop Step    ${id}    ${title}    ${description}    Send Unity Shortcut    ${toRobotCell(shortcut)}`,
+      ];
+    }
+    const keys = readStringFromInput(step, "keys");
     return [
-      `        Doc Desktop Step    ${id}    ${title}    ${description}    Type Unity Text    ${requiredStringParam(step, "text")}`,
+      `        Doc Desktop Step    ${id}    ${title}    ${description}    Press Unity Keys    ${toRobotCell(keys || "{ENTER}")}`,
     ];
   }
-  if (step.action === "wait") {
+  if (step.action === "open_menu") {
+    const menuPath = requiredStringFromInput(step, "menu_path");
     return [
-      `        Doc Desktop Step    ${id}    ${title}    ${description}    Wait For Seconds    ${numberParam(step, "seconds", 1)}`,
-    ];
-  }
-  if (step.action === "keys") {
-    return [
-      `        Doc Desktop Step    ${id}    ${title}    ${description}    Press Unity Keys    ${requiredStringParam(step, "keys")}`,
-    ];
-  }
-  if (step.action === "shortcut") {
-    return [
-      `        Doc Desktop Step    ${id}    ${title}    ${description}    Send Unity Shortcut    ${requiredStringParam(step, "shortcut")}`,
-    ];
-  }
-  if (step.action === "menu") {
-    return [
-      `        Doc Desktop Step    ${id}    ${title}    ${description}    Open Unity Top Menu    ${requiredStringParam(step, "menu_path")}`,
+      `        Doc Desktop Step    ${id}    ${title}    ${description}    Open Unity Top Menu    ${menuPath}`,
     ];
   }
   if (step.action === "screenshot") {
+    const path = readStringFromInput(step, "path");
+    if (path !== "") {
+      return [`        Capture Unity Screenshot    ${toRobotCell(path)}`];
+    }
     return [
       `        Doc Desktop Step    ${id}    ${title}    ${description}    No Operation`,
     ];
@@ -322,7 +399,7 @@ function unityKeywordLines(): string[] {
 }
 
 function ensureActionSupported(
-  step: ScenarioStep,
+  step: ScenarioStepAction,
   allowed: Set<string>,
   target: "web" | "unity",
 ): void {
@@ -333,20 +410,147 @@ function ensureActionSupported(
   }
 }
 
-function requiredStringParam(step: ScenarioStep, key: string): string {
-  const value = step.params[key];
-  if (typeof value !== "string" || value.trim() === "") {
-    throw new Error(`Step "${step.id}" requires string param "${key}".`);
+function readStartUrl(scenario: AutomationScenario): string {
+  const fromVariable = readVariableDefault(scenario, "start_url");
+  if (fromVariable) {
+    return fromVariable;
+  }
+  const fromMetadata = readMetadataString(scenario, "start_url");
+  return fromMetadata || "about:blank";
+}
+
+function readBrowser(scenario: AutomationScenario): string {
+  const fromVariable = readVariableDefault(scenario, "browser");
+  if (fromVariable) {
+    return fromVariable;
+  }
+  const fromMetadata = readMetadataString(scenario, "browser");
+  return fromMetadata || "chrome";
+}
+
+function readUnityExecutionMode(scenario: AutomationScenario): string {
+  const executionMode = readExecutionString(scenario, "mode");
+  if (executionMode) {
+    return executionMode;
+  }
+  return readMetadataString(scenario, "unity_execution_mode") || "attach";
+}
+
+function readUnityProjectPath(scenario: AutomationScenario): string {
+  const launch = readExecutionObject(scenario, "launch");
+  const variableId =
+    launch && typeof launch.unity_project_path_var === "string"
+      ? launch.unity_project_path_var
+      : "";
+  if (variableId) {
+    const fromVariable = readVariableDefault(scenario, variableId);
+    if (fromVariable) {
+      return fromVariable;
+    }
+  }
+  const defaultProject = readVariableDefault(scenario, "unity_project_path");
+  if (defaultProject) {
+    return defaultProject;
+  }
+  return readMetadataString(scenario, "unity_project_path") || "";
+}
+
+function readUnityWindowHint(scenario: AutomationScenario): string {
+  const attach = readExecutionObject(scenario, "attach");
+  const variableId =
+    attach && typeof attach.window_hint_var === "string"
+      ? attach.window_hint_var
+      : "";
+  if (variableId) {
+    const fromVariable = readVariableDefault(scenario, variableId);
+    if (fromVariable) {
+      return fromVariable;
+    }
+  }
+  const defaultHint = readVariableDefault(scenario, "unity_window_hint");
+  if (defaultHint) {
+    return defaultHint;
+  }
+  return readMetadataString(scenario, "target_window_hint") || "Unity";
+}
+
+function readVariableDefault(
+  scenario: AutomationScenario,
+  variableId: string,
+): string {
+  for (const variable of scenario.variables) {
+    if (variable.id !== variableId) {
+      continue;
+    }
+    if (variable.default === undefined || variable.default === null) {
+      return "";
+    }
+    return String(variable.default);
+  }
+  return "";
+}
+
+function readMetadataString(scenario: AutomationScenario, key: string): string {
+  const value = scenario.metadata[key];
+  return typeof value === "string" ? value : "";
+}
+
+function readExecutionString(
+  scenario: AutomationScenario,
+  key: string,
+): string {
+  if (!scenario.execution || typeof scenario.execution !== "object") {
+    return "";
+  }
+  const value = scenario.execution[key];
+  return typeof value === "string" ? value : "";
+}
+
+function readExecutionObject(
+  scenario: AutomationScenario,
+  key: string,
+): Record<string, unknown> | undefined {
+  if (!scenario.execution || typeof scenario.execution !== "object") {
+    return undefined;
+  }
+  const value = scenario.execution[key];
+  if (!value || typeof value !== "object") {
+    return undefined;
+  }
+  return value as Record<string, unknown>;
+}
+
+function requiredStringFromInput(
+  step: ScenarioStepAction,
+  key: string,
+): string {
+  const value = readStringFromInput(step, key);
+  if (value === "") {
+    throw new Error(`Step "${step.id}" requires input.${key}.`);
   }
   return toRobotCell(value);
 }
 
-function numberParam(
-  step: ScenarioStep,
+function readStringFromInput(step: ScenarioStepAction, key: string): string {
+  if (!step.input || typeof step.input !== "object") {
+    return "";
+  }
+  const value = step.input[key];
+  if (typeof value !== "string") {
+    return "";
+  }
+  return value;
+}
+
+function numberFromInput(
+  step: ScenarioStepAction,
   key: string,
   fallback: number,
 ): string {
-  const value = step.params[key];
+  if (!step.input || typeof step.input !== "object") {
+    return `${fallback}`;
+  }
+  const value = step.input[key];
   if (typeof value === "number" && Number.isFinite(value)) {
     return `${value}`;
   }
@@ -359,16 +563,159 @@ function numberParam(
   return `${fallback}`;
 }
 
-function getMetadataString(
-  scenario: AutomationScenario,
-  key: string,
-  fallback: string,
+function waitSecondsFromTiming(
+  step: ScenarioStepAction,
+  fallback: number,
 ): string {
-  const value = scenario.metadata[key];
-  if (typeof value === "string" && value.trim() !== "") {
-    return value;
+  if (!step.timing || typeof step.timing !== "object") {
+    return `${fallback}`;
   }
-  return fallback;
+  const stability = step.timing.stability_ms;
+  if (typeof stability === "number" && Number.isFinite(stability)) {
+    return `${Math.max(0, stability / 1000)}`;
+  }
+  return `${fallback}`;
+}
+
+function resolveWebLocator(target: unknown): string {
+  if (!target || typeof target !== "object") {
+    throw new Error("web step requires target.");
+  }
+  const targetRecord = target as Record<string, unknown>;
+  const strategy = String(targetRecord.strategy ?? "");
+  if (strategy !== "web") {
+    throw new Error(`web target strategy must be "web", got: ${strategy}`);
+  }
+  const web = targetRecord.web;
+  if (!web || typeof web !== "object") {
+    throw new Error("web target requires web selector object.");
+  }
+  const selector = web as Record<string, unknown>;
+  const css = selector.css;
+  if (typeof css === "string" && css.trim() !== "") {
+    return toRobotCell(`css:${css}`);
+  }
+  const xpath = selector.xpath;
+  if (typeof xpath === "string" && xpath.trim() !== "") {
+    return toRobotCell(`xpath:${xpath}`);
+  }
+  const text = selector.text;
+  if (typeof text === "string" && text.trim() !== "") {
+    return toRobotCell(`//*[contains(normalize-space(.), "${text}")]`);
+  }
+  throw new Error("web selector requires css/xpath/text.");
+}
+
+function readNestedTarget(
+  input: Record<string, unknown> | undefined,
+  key: string,
+): Record<string, unknown> {
+  if (!input || typeof input !== "object") {
+    throw new Error(`input.${key} is required.`);
+  }
+  const value = input[key];
+  if (!value || typeof value !== "object") {
+    throw new Error(`input.${key} target is required.`);
+  }
+  return value as Record<string, unknown>;
+}
+
+function readTargetStrategy(target: unknown): string {
+  if (!target || typeof target !== "object") {
+    throw new Error("target is required.");
+  }
+  const strategy = (target as Record<string, unknown>).strategy;
+  if (typeof strategy !== "string" || strategy.trim() === "") {
+    throw new Error("target.strategy is required.");
+  }
+  return strategy;
+}
+
+function unitySelectorArgs(target: unknown, prefix = ""): string {
+  if (!target || typeof target !== "object") {
+    throw new Error("uia target is required.");
+  }
+  const targetRecord = target as Record<string, unknown>;
+  if (targetRecord.strategy !== "uia") {
+    throw new Error(
+      `uia target strategy required, got: ${targetRecord.strategy}`,
+    );
+  }
+  const uia = targetRecord.uia;
+  if (!uia || typeof uia !== "object") {
+    throw new Error("uia target requires uia object.");
+  }
+  const selector = uia as Record<string, unknown>;
+  const parts: string[] = [];
+  for (const key of [
+    "title",
+    "automation_id",
+    "class_name",
+    "control_type",
+    "index",
+  ]) {
+    const value = selector[key];
+    if (value === undefined || value === null) {
+      continue;
+    }
+    const text = String(value).trim();
+    if (text === "") {
+      continue;
+    }
+    parts.push(`${prefix}${key}=${text}`);
+  }
+  if (parts.length === 0) {
+    throw new Error("uia selector requires at least one attribute.");
+  }
+  return `    ${parts.join("    ")}`;
+}
+
+function readUnityHierarchyPath(target: unknown): string {
+  if (!target || typeof target !== "object") {
+    throw new Error("unity_hierarchy target is required.");
+  }
+  const targetRecord = target as Record<string, unknown>;
+  if (targetRecord.strategy !== "unity_hierarchy") {
+    throw new Error("unity_hierarchy strategy is required.");
+  }
+  const hierarchy = targetRecord.unity_hierarchy;
+  if (!hierarchy || typeof hierarchy !== "object") {
+    throw new Error("unity_hierarchy object is required.");
+  }
+  const path = (hierarchy as Record<string, unknown>).path;
+  if (typeof path !== "string" || path.trim() === "") {
+    throw new Error("unity_hierarchy.path is required.");
+  }
+  return toRobotCell(path);
+}
+
+function requiredCoordinate(target: unknown): {
+  xRatio: string;
+  yRatio: string;
+} {
+  if (!target || typeof target !== "object") {
+    throw new Error("coordinate target is required.");
+  }
+  const targetRecord = target as Record<string, unknown>;
+  if (targetRecord.strategy !== "coordinate") {
+    throw new Error(
+      `coordinate target strategy required, got: ${targetRecord.strategy}`,
+    );
+  }
+  const coordinate = targetRecord.coordinate;
+  if (!coordinate || typeof coordinate !== "object") {
+    throw new Error("coordinate object is required.");
+  }
+  const coordinateRecord = coordinate as Record<string, unknown>;
+  const x = coordinateRecord.x_ratio;
+  const y = coordinateRecord.y_ratio;
+  if (
+    (typeof x !== "number" && typeof x !== "string") ||
+    (typeof y !== "number" && typeof y !== "string")
+  ) {
+    throw new Error("coordinate x_ratio/y_ratio are required.");
+  }
+  return { xRatio: String(x), yRatio: String(y) };
 }
 
 function normalizeUnityMode(value: string): "attach" | "launch" {
