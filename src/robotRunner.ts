@@ -1,4 +1,4 @@
-import { mkdir, readFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join, parse, resolve } from "node:path";
 import { spawn, type ChildProcess } from "node:child_process";
 import { fileURLToPath } from "node:url";
@@ -14,6 +14,8 @@ import type {
   StepArtifact,
   VideoTimelineEvent,
 } from "./types.js";
+import { loadScenarioFile } from "./scenarioSpec.js";
+import { generateRobotSuiteFromScenario } from "./scenarioToRobot.js";
 
 export type RunRobotCommandOptions = {
   suitePath: string;
@@ -21,6 +23,47 @@ export type RunRobotCommandOptions = {
   markdownPath?: string;
   recordVideo?: boolean;
 };
+
+export type RunScenarioCommandOptions = {
+  scenarioPath: string;
+  outputDir?: string;
+  markdownPath?: string;
+  recordVideo?: boolean;
+};
+
+export async function runScenarioCommand(
+  options: RunScenarioCommandOptions,
+): Promise<{
+  scenarioId: string;
+  steps: number;
+  videoPath: string | null;
+  outputDir: string;
+}> {
+  const scenarioPath = resolve(options.scenarioPath);
+  const scenario = await loadScenarioFile(scenarioPath);
+  const outputDir = resolve(
+    options.outputDir ?? join("artifacts", scenario.scenario_id),
+  );
+  const generatedSuiteDir = join(outputDir, "generated");
+  const generatedSuitePath = join(
+    generatedSuiteDir,
+    `${scenario.scenario_id}.robot`,
+  );
+
+  await mkdir(generatedSuiteDir, { recursive: true });
+  await writeFile(
+    generatedSuitePath,
+    generateRobotSuiteFromScenario(scenario),
+    "utf8",
+  );
+
+  return runRobotCommand({
+    suitePath: generatedSuitePath,
+    outputDir,
+    markdownPath: options.markdownPath,
+    recordVideo: options.recordVideo,
+  });
+}
 
 export async function runRobotCommand(
   options: RunRobotCommandOptions,

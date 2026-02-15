@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 
-import { runRobotCommand } from "./index.js";
+import { runScenarioCommand } from "./index.js";
 
 type ParsedArgs = {
-  suitePath?: string;
+  scenarioPath?: string;
   outputDir?: string;
   markdownPath?: string;
   recordVideo?: boolean;
@@ -13,14 +13,14 @@ async function main(): Promise<void> {
   const args = process.argv.slice(2);
   const command = args[0];
 
-  if (command === "run-robot") {
+  if (command === "run-scenario") {
     const options = parseArgs(args.slice(1));
-    if (!options.suitePath) {
-      throw new Error("--suite is required");
+    if (!options.scenarioPath) {
+      throw new Error("--scenario is required");
     }
 
-    const result = await runRobotCommand({
-      suitePath: options.suitePath,
+    const result = await runScenarioCommand({
+      scenarioPath: options.scenarioPath,
       outputDir: options.outputDir,
       markdownPath: options.markdownPath,
       recordVideo: options.recordVideo,
@@ -45,8 +45,8 @@ function parseArgs(args: string[]): ParsedArgs {
     } else if (arg === "--markdown") {
       parsed.markdownPath = args[i + 1];
       i += 1;
-    } else if (arg === "--suite") {
-      parsed.suitePath = args[i + 1];
+    } else if (arg === "--scenario") {
+      parsed.scenarioPath = args[i + 1];
       i += 1;
     } else if (arg === "--record-video") {
       parsed.recordVideo = parseBooleanArg(args[i + 1]);
@@ -63,7 +63,7 @@ function printUsage(): void {
   process.stdout.write(
     [
       "Usage:",
-      "  automation-scenario run-robot --suite <path> [--output <dir>] [--markdown <path>] [--record-video <true|false>]",
+      "  automation-scenario run-scenario --scenario <path> [--output <dir>] [--markdown <path>] [--record-video <true|false>]",
     ].join("\n"),
   );
 }

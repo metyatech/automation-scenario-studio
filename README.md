@@ -1,13 +1,13 @@
 # automation-scenario-studio
 
-CLI entrypoint for Robot Framework execution and guidebook artifact generation.
+CLI entrypoint for scenario execution and guidebook artifact generation.
 
 ## Overview
 
 This package composes:
 
 - `@metyatech/automation-scenario-renderer` for markdown and media outputs
-- Robot Framework CLI for `.robot` suites
+- Robot Framework CLI for generated `.robot` suites
 
 ## Install
 
@@ -18,15 +18,21 @@ npm install @metyatech/automation-scenario-studio
 ## CLI
 
 ```bash
-automation-scenario run-robot --suite ./automation/robot/web-example.robot --output ./artifacts/web-example --markdown ./docs/controls/auto-web-example.md
+automation-scenario run-scenario --scenario ./automation/scenarios/web-example.scenario.json --output ./artifacts/web-example --markdown ./docs/controls/auto-web-example.md
 ```
 
 Parameters:
 
-- `--suite` (required for `run-robot`): Robot Framework suite path
+- `--scenario` (required for `run-scenario`): scenario JSON path
 - `--output` (optional): artifact directory override
 - `--markdown` (optional): markdown output path override
-- `--record-video` (optional): `true`/`false` for desktop recording in `run-robot`
+- `--record-video` (optional): `true`/`false` for desktop recording in `run-scenario`
+
+Scenario format:
+
+- JSON schema repository: `metyatech/automation-scenario-spec`
+- Supported targets: `web`, `unity`
+- Supported actions: `open_url`, `click`, `drag`, `type`, `wait`, `shortcut`, `menu`, `keys`, `screenshot`
 
 Robot execution prerequisites:
 
