@@ -1,3 +1,6 @@
+node_modules/
 dist/
+coverage/
+artifacts/
 AGENTS.md
 package-lock.json

@@ -56,10 +56,12 @@ describe("robot runner command builders", () => {
         id: "click",
         title: "Click",
         imagePath: "x.png",
-        annotation: {
-          type: "click",
-          box: { x: 10, y: 20, width: 100, height: 30 },
-        },
+        annotations: [
+          {
+            type: "highlight_box",
+            box: { x: 10, y: 20, width: 100, height: 30 },
+          },
+        ],
         startedAtMs: 2_000,
         endedAtMs: 2_200,
       },
@@ -67,11 +69,13 @@ describe("robot runner command builders", () => {
         id: "drag",
         title: "Drag",
         imagePath: "y.png",
-        annotation: {
-          type: "dragDrop",
-          from: { x: 100, y: 150 },
-          to: { x: 300, y: 350 },
-        },
+        annotations: [
+          {
+            type: "drag_arrow",
+            from: { x: 100, y: 150 },
+            to: { x: 300, y: 350 },
+          },
+        ],
         startedAtMs: 3_000,
         endedAtMs: 3_800,
       },
@@ -81,27 +85,34 @@ describe("robot runner command builders", () => {
 
     expect(events).toHaveLength(2);
     expect(events[0]).toMatchObject({
-      type: "click",
+      type: "highlight_box",
       startSeconds: 0,
     });
     expect(events[1]).toMatchObject({
-      type: "dragDrop",
+      type: "drag_arrow",
       startSeconds: 1,
     });
   });
 
-  it("accepts only drawable annotations", () => {
+  it("accepts drawable annotations by primitive", () => {
     expect(
       isDrawableAnnotation({
-        type: "click",
+        type: "highlight_box",
         box: { x: 1, y: 2, width: 3, height: 4 },
       }),
     ).toBe(true);
     expect(
       isDrawableAnnotation({
-        type: "dragDrop",
+        type: "drag_arrow",
         from: { x: 1, y: 2 },
         to: { x: 3, y: 4 },
+      }),
+    ).toBe(true);
+    expect(
+      isDrawableAnnotation({
+        type: "label",
+        text: "Step 1",
+        point: { x: 10, y: 20 },
       }),
     ).toBe(true);
     expect(isDrawableAnnotation(undefined)).toBe(false);

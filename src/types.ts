@@ -10,15 +10,50 @@ export type Box = {
   height: number;
 };
 
+export type ClickAnnotation = {
+  type: "click";
+  box: Box;
+};
+
+export type ClickPulseAnnotation = {
+  type: "click_pulse";
+  box: Box;
+};
+
+export type HighlightBoxAnnotation = {
+  type: "highlight_box";
+  box: Box;
+};
+
+export type DragDropAnnotation = {
+  type: "dragDrop";
+  from: Point;
+  to: Point;
+};
+
+export type DragArrowAnnotation = {
+  type: "drag_arrow";
+  from: Point;
+  to: Point;
+};
+
+export type LabelAnnotation = {
+  type: "label";
+  text: string;
+  point?: Point;
+  box?: Box;
+};
+
 export type AnnotationSpec =
+  | ClickAnnotation
+  | ClickPulseAnnotation
+  | HighlightBoxAnnotation
+  | DragDropAnnotation
+  | DragArrowAnnotation
+  | LabelAnnotation
   | {
-      type: "click";
-      box: Box;
-    }
-  | {
-      type: "dragDrop";
-      from: Point;
-      to: Point;
+      type: string;
+      [key: string]: unknown;
     };
 
 export type StepArtifact = {
@@ -27,6 +62,7 @@ export type StepArtifact = {
   description?: string;
   imagePath: string;
   annotation?: AnnotationSpec;
+  annotations?: AnnotationSpec[];
   startedAtMs?: number;
   endedAtMs?: number;
 };
@@ -47,9 +83,36 @@ export type VideoTimelineEvent =
       box: Box;
     }
   | {
+      type: "click_pulse";
+      startSeconds: number;
+      endSeconds: number;
+      box: Box;
+    }
+  | {
+      type: "highlight_box";
+      startSeconds: number;
+      endSeconds: number;
+      box: Box;
+    }
+  | {
       type: "dragDrop";
       startSeconds: number;
       endSeconds: number;
       from: Point;
       to: Point;
+    }
+  | {
+      type: "drag_arrow";
+      startSeconds: number;
+      endSeconds: number;
+      from: Point;
+      to: Point;
+    }
+  | {
+      type: "label";
+      startSeconds: number;
+      endSeconds: number;
+      text: string;
+      point?: Point;
+      box?: Box;
     };

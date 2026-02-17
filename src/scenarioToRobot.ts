@@ -2,27 +2,47 @@ import type {
   AutomationScenario,
   ScenarioStep,
   ScenarioStepAction,
+  ScenarioStepControl,
 } from "./scenarioSpec.js";
 
 const WEB_ACTIONS = new Set([
   "open_url",
   "click",
+  "double_click",
+  "right_click",
   "drag_drop",
   "type_text",
   "wait_for",
+  "assert",
   "press_keys",
   "screenshot",
+  "start_video",
+  "stop_video",
+  "emit_annotation",
 ]);
 
 const UNITY_ACTIONS = new Set([
   "click",
+  "double_click",
+  "right_click",
   "drag_drop",
   "type_text",
   "wait_for",
+  "assert",
   "press_keys",
   "open_menu",
+  "select_hierarchy",
   "screenshot",
+  "start_video",
+  "stop_video",
+  "emit_annotation",
 ]);
+
+type ControlSignal = "none" | "break" | "continue" | "return";
+
+type ExpansionFrame = {
+  signal: ControlSignal;
+};
 
 export function generateRobotSuiteFromScenario(
   scenario: AutomationScenario,
@@ -40,6 +60,9 @@ export function generateRobotSuiteFromScenario(
 function generateWebRobotSuite(scenario: AutomationScenario): string {
   const startUrl = toRobotCell(readStartUrl(scenario));
   const browser = toRobotCell(readBrowser(scenario));
+  const screenshotEnabled = readScreenshotOutputEnabled(scenario)
+    ? "${TRUE}"
+    : "${FALSE}";
   const stepLines = flattenSteps(scenario.steps).flatMap((step) =>
     toWebStepLines(step),
   );
@@ -56,6 +79,7 @@ function generateWebRobotSuite(scenario: AutomationScenario): string {
     "    Ensure Artifact Directories",
     `    \${start_url}=    Set Variable    ${startUrl}`,
     `    \${browser}=    Set Variable    ${browser}`,
+    `    \${screenshot_enabled}=    Set Variable    ${screenshotEnabled}`,
     "    Open Browser    ${start_url}    ${browser}",
     "    Maximize Browser Window",
     "    TRY",
@@ -74,6 +98,9 @@ function generateUnityRobotSuite(scenario: AutomationScenario): string {
   const unityMode = normalizeUnityMode(readUnityExecutionMode(scenario));
   const unityProjectPath = toRobotOptionalCell(readUnityProjectPath(scenario));
   const unityWindowHint = toRobotCell(readUnityWindowHint(scenario));
+  const screenshotEnabled = readScreenshotOutputEnabled(scenario)
+    ? "${TRUE}"
+    : "${FALSE}";
   const stepLines = flattenSteps(scenario.steps).flatMap((step) =>
     toUnityStepLines(step),
   );
@@ -92,6 +119,7 @@ function generateUnityRobotSuite(scenario: AutomationScenario): string {
     `    \${unity_mode}=    Set Variable    ${unityMode}`,
     `    \${unity_project_path}=    Set Variable    ${unityProjectPath}`,
     `    \${unity_window_hint}=    Set Variable    ${unityWindowHint}`,
+    `    \${screenshot_enabled}=    Set Variable    ${screenshotEnabled}`,
     "    TRY",
     "        IF    '${unity_mode}' == 'launch'",
     "            Require Unity Project Path    ${unity_project_path}",
@@ -112,26 +140,442 @@ function generateUnityRobotSuite(scenario: AutomationScenario): string {
   ].join("\n");
 }
 
-function flattenSteps(
+function flattenSteps(steps: ScenarioStep[]): ScenarioStepAction[] {
+  const frame: ExpansionFrame = { signal: "none" };
+  const expanded = expandSteps(steps, [], {}, frame);
+  return dedupeStepIds(expanded);
+}
+
+function expandSteps(
   steps: ScenarioStep[],
-  parentTitles: string[] = [],
+  parentTitles: string[],
+  values: Record<string, unknown>,
+  frame: ExpansionFrame,
 ): ScenarioStepAction[] {
   const output: ScenarioStepAction[] = [];
+
   for (const step of steps) {
+    if (frame.signal === "return") {
+      break;
+    }
+
     if (step.kind === "group") {
-      output.push(...flattenSteps(step.steps, [...parentTitles, step.title]));
+      output.push(
+        ...expandSteps(
+          step.steps,
+          [...parentTitles, interpolateString(step.title, values)],
+          values,
+          frame,
+        ),
+      );
       continue;
     }
-    if (step.kind === "control") {
-      throw new Error(
-        `Unsupported control step for Robot export: ${step.control} (${step.id})`,
+
+    if (step.kind === "action") {
+      output.push(resolveActionStep(step, parentTitles, values));
+      continue;
+    }
+
+    output.push(...expandControlStep(step, parentTitles, values, frame));
+  }
+
+  return output;
+}
+
+function resolveActionStep(
+  step: ScenarioStepAction,
+  parentTitles: string[],
+  values: Record<string, unknown>,
+): ScenarioStepAction {
+  const resolved = resolveTemplate(step, values) as ScenarioStepAction;
+  const titlePrefix =
+    parentTitles.length > 0 ? `${parentTitles.join(" > ")} > ` : "";
+  return {
+    ...resolved,
+    id: sanitizeDynamicStepId(String(resolved.id ?? step.id)),
+    title: `${titlePrefix}${String(resolved.title ?? step.title)}`,
+    description:
+      typeof resolved.description === "string"
+        ? resolved.description
+        : undefined,
+    action: String(resolved.action ?? step.action),
+  };
+}
+
+function expandControlStep(
+  step: ScenarioStepControl,
+  parentTitles: string[],
+  values: Record<string, unknown>,
+  frame: ExpansionFrame,
+): ScenarioStepAction[] {
+  const output: ScenarioStepAction[] = [];
+
+  if (step.control === "if") {
+    const branches = Array.isArray(step.branches) ? step.branches : [];
+    let matched = false;
+    for (const branch of branches) {
+      if (!evaluateControlExpression(branch.when, values)) {
+        continue;
+      }
+      matched = true;
+      output.push(...expandSteps(branch.steps, parentTitles, values, frame));
+      break;
+    }
+    if (!matched && step.steps) {
+      output.push(...expandSteps(step.steps, parentTitles, values, frame));
+    }
+    return output;
+  }
+
+  if (step.control === "for_each") {
+    const itemVariable = step.item_variable?.trim() || "item";
+    const items = evaluateItemsExpression(step.items_expression, values);
+    const nested = step.steps ?? [];
+    for (let index = 0; index < items.length; index += 1) {
+      const item = items[index];
+      const loopValues = {
+        ...values,
+        [itemVariable]: item,
+        [`${itemVariable}_index`]: index,
+        item,
+        index,
+      };
+      output.push(...expandSteps(nested, parentTitles, loopValues, frame));
+      if (frame.signal === "return") {
+        return output;
+      }
+      if (frame.signal === "break") {
+        frame.signal = "none";
+        break;
+      }
+      if (frame.signal === "continue") {
+        frame.signal = "none";
+      }
+    }
+    return output;
+  }
+
+  if (step.control === "while") {
+    const nested = step.steps ?? [];
+    const maxIterations =
+      typeof step.max_iterations === "number" &&
+      Number.isInteger(step.max_iterations)
+        ? Math.max(1, step.max_iterations)
+        : 50;
+
+    let iterations = 0;
+    while (iterations < maxIterations) {
+      if (!evaluateControlExpression(step.expression, values)) {
+        break;
+      }
+      const loopValues = {
+        ...values,
+        loop_index: iterations,
+      };
+      output.push(...expandSteps(nested, parentTitles, loopValues, frame));
+      iterations += 1;
+
+      if (frame.signal === "return") {
+        return output;
+      }
+      if (frame.signal === "break") {
+        frame.signal = "none";
+        break;
+      }
+      if (frame.signal === "continue") {
+        frame.signal = "none";
+      }
+    }
+    return output;
+  }
+
+  if (step.control === "try") {
+    if (step.steps) {
+      output.push(...expandSteps(step.steps, parentTitles, values, frame));
+    }
+    if (step.finally_steps) {
+      output.push(
+        ...expandSteps(step.finally_steps, parentTitles, values, frame),
       );
     }
-    const titlePrefix =
-      parentTitles.length > 0 ? `${parentTitles.join(" > ")} > ` : "";
-    output.push({ ...step, title: `${titlePrefix}${step.title}` });
+    return output;
   }
-  return output;
+
+  if (step.control === "parallel") {
+    if (step.steps) {
+      output.push(...expandSteps(step.steps, parentTitles, values, frame));
+    }
+    return output;
+  }
+
+  if (step.control === "break") {
+    frame.signal = "break";
+    return output;
+  }
+
+  if (step.control === "continue") {
+    frame.signal = "continue";
+    return output;
+  }
+
+  if (step.control === "return") {
+    frame.signal = "return";
+    return output;
+  }
+
+  throw new Error(`Unsupported control step: ${step.control} (${step.id})`);
+}
+
+function evaluateItemsExpression(
+  expression: string | undefined,
+  values: Record<string, unknown>,
+): unknown[] {
+  if (!expression || expression.trim() === "") {
+    return [];
+  }
+
+  const resolved = resolveExpressionValue(expression, values);
+  if (Array.isArray(resolved)) {
+    return resolved;
+  }
+  if (resolved && typeof resolved === "object") {
+    return Object.values(resolved);
+  }
+  if (typeof resolved === "string") {
+    const trimmed = resolved.trim();
+    if (trimmed === "") {
+      return [];
+    }
+    try {
+      const parsed = JSON.parse(trimmed) as unknown;
+      if (Array.isArray(parsed)) {
+        return parsed;
+      }
+    } catch {
+      // non-json list expression
+    }
+    return trimmed
+      .split(",")
+      .map((part) => part.trim())
+      .filter((part) => part !== "");
+  }
+  if (resolved === undefined || resolved === null) {
+    return [];
+  }
+  return [resolved];
+}
+function evaluateControlExpression(
+  expression: string | undefined,
+  values: Record<string, unknown>,
+): boolean {
+  if (!expression) {
+    return false;
+  }
+  const normalized = expression.trim();
+  if (normalized === "") {
+    return false;
+  }
+  if (normalized.startsWith("!")) {
+    return !evaluateControlExpression(normalized.slice(1), values);
+  }
+
+  const operatorMatch = normalized.match(
+    /^(.*?)\s+(==|!=|>=|<=|>|<|in|contains)\s+(.*?)$/,
+  );
+  if (!operatorMatch) {
+    return isTruthy(resolveExpressionValue(normalized, values));
+  }
+
+  const left = resolveExpressionValue(operatorMatch[1], values);
+  const operator = operatorMatch[2];
+  const right = resolveExpressionValue(operatorMatch[3], values);
+
+  if (operator === "==") {
+    return compareOperands(left, right) === 0;
+  }
+  if (operator === "!=") {
+    return compareOperands(left, right) !== 0;
+  }
+  if (operator === ">") {
+    return compareOperands(left, right) > 0;
+  }
+  if (operator === "<") {
+    return compareOperands(left, right) < 0;
+  }
+  if (operator === ">=") {
+    return compareOperands(left, right) >= 0;
+  }
+  if (operator === "<=") {
+    return compareOperands(left, right) <= 0;
+  }
+  if (operator === "in") {
+    if (Array.isArray(right)) {
+      return right.some((item) => compareOperands(left, item) === 0);
+    }
+    if (typeof right === "string") {
+      return right.includes(String(left ?? ""));
+    }
+    return false;
+  }
+  if (operator === "contains") {
+    if (Array.isArray(left)) {
+      return left.some((item) => compareOperands(item, right) === 0);
+    }
+    if (typeof left === "string") {
+      return left.includes(String(right ?? ""));
+    }
+    return false;
+  }
+
+  return false;
+}
+
+function resolveExpressionValue(
+  raw: string,
+  values: Record<string, unknown>,
+): unknown {
+  const token = raw.trim();
+  if (token === "") {
+    return "";
+  }
+
+  if (token.startsWith("${") && token.endsWith("}")) {
+    const path = token.slice(2, -1).trim();
+    return getPathValue(values, path);
+  }
+
+  if (
+    (token.startsWith('"') && token.endsWith('"')) ||
+    (token.startsWith("'") && token.endsWith("'"))
+  ) {
+    return token.slice(1, -1);
+  }
+
+  if (token === "true") {
+    return true;
+  }
+  if (token === "false") {
+    return false;
+  }
+  if (token === "null") {
+    return null;
+  }
+
+  const maybeNumber = Number(token);
+  if (!Number.isNaN(maybeNumber) && token !== "") {
+    return maybeNumber;
+  }
+
+  if (token.startsWith("{") || token.startsWith("[")) {
+    try {
+      return JSON.parse(token) as unknown;
+    } catch {
+      // keep as raw token
+    }
+  }
+
+  if (token.includes("${")) {
+    return interpolateString(token, values);
+  }
+
+  const pathValue = getPathValue(values, token);
+  if (pathValue !== undefined) {
+    return pathValue;
+  }
+
+  return token;
+}
+
+function getPathValue(source: Record<string, unknown>, path: string): unknown {
+  const normalized = path.trim();
+  if (normalized === "") {
+    return undefined;
+  }
+  const segments = normalized.split(".").filter((segment) => segment !== "");
+  let current: unknown = source;
+  for (const segment of segments) {
+    if (!current || typeof current !== "object") {
+      return undefined;
+    }
+    const record = current as Record<string, unknown>;
+    if (!(segment in record)) {
+      return undefined;
+    }
+    current = record[segment];
+  }
+  return current;
+}
+
+function compareOperands(left: unknown, right: unknown): number {
+  const leftNumber = toFiniteNumber(left);
+  const rightNumber = toFiniteNumber(right);
+  if (leftNumber !== undefined && rightNumber !== undefined) {
+    return leftNumber === rightNumber ? 0 : leftNumber > rightNumber ? 1 : -1;
+  }
+  const leftText = String(left ?? "");
+  const rightText = String(right ?? "");
+  return leftText === rightText ? 0 : leftText > rightText ? 1 : -1;
+}
+
+function toFiniteNumber(value: unknown): number | undefined {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value;
+  }
+  if (typeof value === "string" && value.trim() !== "") {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed)) {
+      return parsed;
+    }
+  }
+  return undefined;
+}
+
+function isTruthy(value: unknown): boolean {
+  if (typeof value === "boolean") {
+    return value;
+  }
+  if (typeof value === "number") {
+    return value !== 0;
+  }
+  if (typeof value === "string") {
+    const normalized = value.trim().toLowerCase();
+    return normalized !== "" && normalized !== "false" && normalized !== "0";
+  }
+  if (Array.isArray(value)) {
+    return value.length > 0;
+  }
+  if (value && typeof value === "object") {
+    return Object.keys(value).length > 0;
+  }
+  return Boolean(value);
+}
+
+function dedupeStepIds(steps: ScenarioStepAction[]): ScenarioStepAction[] {
+  const seen = new Map<string, number>();
+  return steps.map((step) => {
+    const baseId = sanitizeDynamicStepId(step.id);
+    const next = (seen.get(baseId) ?? 0) + 1;
+    seen.set(baseId, next);
+    if (next === 1) {
+      return {
+        ...step,
+        id: baseId,
+      };
+    }
+    return {
+      ...step,
+      id: `${baseId}-${next}`,
+    };
+  });
+}
+
+function sanitizeDynamicStepId(value: string): string {
+  const normalized = value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+  return normalized || "step";
 }
 
 function toWebStepLines(step: ScenarioStepAction): string[] {
@@ -142,50 +586,128 @@ function toWebStepLines(step: ScenarioStepAction): string[] {
 
   if (step.action === "open_url") {
     const url = requiredStringFromInput(step, "url");
-    return [
-      `        Doc Web Step    ${id}    ${title}    ${description}    Go To    ${url}`,
-    ];
+    return withStaticAnnotations(
+      [
+        `        Doc Web Step    ${id}    ${title}    ${description}    Go To    ${url}`,
+      ],
+      step,
+    );
   }
   if (step.action === "click") {
     const locator = resolveWebLocator(step.target);
-    return [
-      `        Doc Web Click Step    ${id}    ${title}    ${description}    ${locator}`,
-    ];
+    return withStaticAnnotations(
+      [
+        `        Doc Web Click Step    ${id}    ${title}    ${description}    ${locator}`,
+      ],
+      step,
+    );
+  }
+  if (step.action === "double_click") {
+    const locator = resolveWebLocator(step.target);
+    return withStaticAnnotations(
+      [
+        `        Doc Web Double Click Step    ${id}    ${title}    ${description}    ${locator}`,
+      ],
+      step,
+    );
+  }
+  if (step.action === "right_click") {
+    const locator = resolveWebLocator(step.target);
+    return withStaticAnnotations(
+      [
+        `        Doc Web Context Click Step    ${id}    ${title}    ${description}    ${locator}`,
+      ],
+      step,
+    );
   }
   if (step.action === "drag_drop") {
     const sourceLocator = resolveWebLocator(
       readNestedTarget(step.input, "source"),
     );
     const targetLocator = resolveWebLocator(step.target);
-    return [
-      `        Doc Web Drag Step    ${id}    ${title}    ${description}    ${sourceLocator}    ${targetLocator}`,
-    ];
+    return withStaticAnnotations(
+      [
+        `        Doc Web Drag Step    ${id}    ${title}    ${description}    ${sourceLocator}    ${targetLocator}`,
+      ],
+      step,
+    );
   }
   if (step.action === "type_text") {
     const locator = resolveWebLocator(step.target);
     const text = requiredStringFromInput(step, "text");
-    return [
-      `        Doc Web Step    ${id}    ${title}    ${description}    Input Text    ${locator}    ${text}`,
-    ];
+    return withStaticAnnotations(
+      [
+        `        Doc Web Step    ${id}    ${title}    ${description}    Input Text    ${locator}    ${text}`,
+      ],
+      step,
+    );
   }
   if (step.action === "wait_for") {
+    if (step.target) {
+      const locator = resolveWebLocator(step.target);
+      const timeoutSeconds = readTimingNumber(step, "timeout_seconds", 10);
+      return withStaticAnnotations(
+        [
+          `        Doc Web Step    ${id}    ${title}    ${description}    Wait Until Element Is Visible    ${locator}    ${timeoutSeconds}s`,
+        ],
+        step,
+      );
+    }
+
     const seconds = numberFromInput(step, "seconds", 1);
-    return [
-      `        Doc Web Step    ${id}    ${title}    ${description}    Sleep    ${seconds}`,
-    ];
+    return withStaticAnnotations(
+      [
+        `        Doc Web Step    ${id}    ${title}    ${description}    Sleep    ${seconds}`,
+      ],
+      step,
+    );
+  }
+  if (step.action === "assert") {
+    if (step.target) {
+      const locator = resolveWebLocator(step.target);
+      return withStaticAnnotations(
+        [
+          `        Doc Web Assert Step    ${id}    ${title}    ${description}    ${locator}`,
+        ],
+        step,
+      );
+    }
+
+    const text = readStringFromInput(step, "text");
+    if (text !== "") {
+      return withStaticAnnotations(
+        [
+          `        Doc Web Step    ${id}    ${title}    ${description}    Page Should Contain    ${toRobotCell(text)}`,
+        ],
+        step,
+      );
+    }
+
+    throw new Error(`Step "${step.id}" assert requires target or input.text.`);
   }
   if (step.action === "press_keys") {
     const shortcut = readStringFromInput(step, "shortcut");
     const keys = readStringFromInput(step, "keys");
     const value = toRobotCell(shortcut || keys || "{ENTER}");
-    return [
-      `        Doc Web Step    ${id}    ${title}    ${description}    Press Keys    NONE    ${value}`,
-    ];
+    return withStaticAnnotations(
+      [
+        `        Doc Web Step    ${id}    ${title}    ${description}    Press Keys    NONE    ${value}`,
+      ],
+      step,
+    );
   }
-  if (step.action === "screenshot") {
-    return [
-      `        Doc Web Step    ${id}    ${title}    ${description}    No Operation`,
-    ];
+  if (
+    step.action === "screenshot" ||
+    step.action === "start_video" ||
+    step.action === "stop_video" ||
+    step.action === "emit_annotation"
+  ) {
+    return withStaticAnnotations(
+      [
+        `        Doc Web Step    ${id}    ${title}    ${description}    No Operation`,
+      ],
+      step,
+    );
   }
 
   throw new Error(`Unsupported web action: ${step.action}`);
@@ -197,53 +719,109 @@ function toUnityStepLines(step: ScenarioStepAction): string[] {
   const title = toRobotCell(step.title);
   const description = toRobotOptionalCell(step.description ?? "");
 
-  if (step.action === "click") {
-    const strategy = readTargetStrategy(step.target);
+  if (
+    step.action === "click" ||
+    step.action === "double_click" ||
+    step.action === "right_click"
+  ) {
+    const candidate = selectTargetCandidate(
+      step.target,
+      new Set(["unity_hierarchy", "uia", "coordinate"]),
+      `${step.action} target`,
+    );
+    const strategy = readTargetStrategy(candidate);
+
     if (strategy === "unity_hierarchy") {
-      const path = readUnityHierarchyPath(step.target);
-      return [
-        `        \${annotation}=    Wait Until Keyword Succeeds    45 sec    1 sec    Select Unity Hierarchy Object    hierarchy_path=${path}    timeout_seconds=4.0`,
-        `        Wait For Seconds    ${waitSecondsFromTiming(step, 0.0)}`,
-        "        Emit Annotation Metadata    ${annotation}",
-      ];
+      const path = readUnityHierarchyPathFromCandidate(candidate);
+      return withStaticAnnotations(
+        [
+          `        \${annotation}=    Wait Until Keyword Succeeds    45 sec    1 sec    Select Unity Hierarchy Object    hierarchy_path=${path}    timeout_seconds=4.0`,
+          `        Wait For Seconds    ${waitSecondsFromTiming(step, 0.0)}`,
+          `        Save Step Screenshot    ${id}`,
+          "        Emit Annotation Metadata    ${annotation}",
+        ],
+        step,
+      );
     }
+
     if (strategy === "uia") {
-      const selectorArgs = unitySelectorArgs(step.target);
-      return [
-        `        \${annotation}=    Click Unity Element${selectorArgs}`,
+      const selectorArgs = unitySelectorArgsFromCandidate(candidate);
+      const lines: string[] = [];
+      if (step.action === "right_click") {
+        lines.push(
+          `        \${annotation}=    Click Unity Element${selectorArgs}    button=right`,
+        );
+      } else {
+        lines.push(
+          `        \${annotation}=    Click Unity Element${selectorArgs}`,
+        );
+        if (step.action === "double_click") {
+          lines.push(`        Click Unity Element${selectorArgs}`);
+        }
+      }
+      lines.push(
         `        Wait For Seconds    ${waitSecondsFromTiming(step, 0.0)}`,
-        "        Emit Annotation Metadata    ${annotation}",
-      ];
+      );
+      lines.push(`        Save Step Screenshot    ${id}`);
+      lines.push("        Emit Annotation Metadata    ${annotation}");
+      return withStaticAnnotations(lines, step);
     }
-    if (strategy === "coordinate") {
-      const coordinate = requiredCoordinate(step.target);
-      return [
-        `        Doc Desktop Step    ${id}    ${title}    ${description}    Unity Click Relative And Emit    ${coordinate.xRatio}    ${coordinate.yRatio}    180    48    ${waitSecondsFromTiming(step, 0.8)}`,
-      ];
-    }
-    throw new Error(`Unsupported unity click target strategy: ${strategy}`);
+
+    const coordinate = requiredCoordinateFromCandidate(candidate);
+    const keyword =
+      step.action === "double_click"
+        ? "Unity Double Click Relative And Emit"
+        : step.action === "right_click"
+          ? "Unity Right Click Relative And Emit"
+          : "Unity Click Relative And Emit";
+
+    return withStaticAnnotations(
+      [
+        `        Doc Desktop Step    ${id}    ${title}    ${description}    ${keyword}    ${coordinate.xRatio}    ${coordinate.yRatio}    180    48    ${waitSecondsFromTiming(step, 0.8)}`,
+      ],
+      step,
+    );
   }
 
   if (step.action === "drag_drop") {
-    const source = readNestedTarget(step.input, "source");
+    const source = selectTargetCandidate(
+      readNestedTarget(step.input, "source"),
+      new Set(["uia", "coordinate"]),
+      "drag_drop source",
+    );
+    const target = selectTargetCandidate(
+      step.target,
+      new Set(["uia", "coordinate"]),
+      "drag_drop target",
+    );
     const sourceStrategy = readTargetStrategy(source);
-    const targetStrategy = readTargetStrategy(step.target);
+    const targetStrategy = readTargetStrategy(target);
+
     if (sourceStrategy === "uia" && targetStrategy === "uia") {
-      const sourceArgs = unitySelectorArgs(source, "source_");
-      const targetArgs = unitySelectorArgs(step.target, "target_");
-      return [
-        `        \${annotation}=    Drag Unity Element To Element${sourceArgs}${targetArgs}`,
-        `        Wait For Seconds    ${waitSecondsFromTiming(step, 0.0)}`,
-        "        Emit Annotation Metadata    ${annotation}",
-      ];
+      const sourceArgs = unitySelectorArgsFromCandidate(source, "source_");
+      const targetArgs = unitySelectorArgsFromCandidate(target, "target_");
+      return withStaticAnnotations(
+        [
+          `        \${annotation}=    Drag Unity Element To Element${sourceArgs}${targetArgs}`,
+          `        Wait For Seconds    ${waitSecondsFromTiming(step, 0.0)}`,
+          `        Save Step Screenshot    ${id}`,
+          "        Emit Annotation Metadata    ${annotation}",
+        ],
+        step,
+      );
     }
+
     if (sourceStrategy === "coordinate" && targetStrategy === "coordinate") {
-      const sourceCoordinate = requiredCoordinate(source);
-      const targetCoordinate = requiredCoordinate(step.target);
-      return [
-        `        Doc Desktop Step    ${id}    ${title}    ${description}    Unity Drag Relative And Emit    ${sourceCoordinate.xRatio}    ${sourceCoordinate.yRatio}    ${targetCoordinate.xRatio}    ${targetCoordinate.yRatio}    ${waitSecondsFromTiming(step, 0.8)}`,
-      ];
+      const sourceCoordinate = requiredCoordinateFromCandidate(source);
+      const targetCoordinate = requiredCoordinateFromCandidate(target);
+      return withStaticAnnotations(
+        [
+          `        Doc Desktop Step    ${id}    ${title}    ${description}    Unity Drag Relative And Emit    ${sourceCoordinate.xRatio}    ${sourceCoordinate.yRatio}    ${targetCoordinate.xRatio}    ${targetCoordinate.yRatio}    ${waitSecondsFromTiming(step, 0.8)}`,
+        ],
+        step,
+      );
     }
+
     throw new Error(
       `Unsupported unity drag_drop selector strategy pair: ${sourceStrategy} -> ${targetStrategy}`,
     );
@@ -251,45 +829,161 @@ function toUnityStepLines(step: ScenarioStepAction): string[] {
 
   if (step.action === "type_text") {
     const text = requiredStringFromInput(step, "text");
-    return [
-      `        Doc Desktop Step    ${id}    ${title}    ${description}    Type Unity Text    ${text}`,
-    ];
+    return withStaticAnnotations(
+      [
+        `        Doc Desktop Step    ${id}    ${title}    ${description}    Type Unity Text    ${text}`,
+      ],
+      step,
+    );
   }
   if (step.action === "wait_for") {
+    if (step.target) {
+      const candidate = selectTargetCandidate(
+        step.target,
+        new Set(["uia", "unity_hierarchy"]),
+        "wait_for target",
+      );
+      if (readTargetStrategy(candidate) === "uia") {
+        const selectorArgs = unitySelectorArgsFromCandidate(candidate);
+        const timeoutSeconds = readTimingNumber(step, "timeout_seconds", 10);
+        return withStaticAnnotations(
+          [
+            `        Wait For Unity Element${selectorArgs}    timeout_seconds=${timeoutSeconds}`,
+            `        Save Step Screenshot    ${id}`,
+          ],
+          step,
+        );
+      }
+      const path = readUnityHierarchyPathFromCandidate(candidate);
+      return withStaticAnnotations(
+        [
+          `        \${annotation}=    Wait Until Keyword Succeeds    45 sec    1 sec    Select Unity Hierarchy Object    hierarchy_path=${path}    timeout_seconds=4.0`,
+          `        Save Step Screenshot    ${id}`,
+          "        Emit Annotation Metadata    ${annotation}",
+        ],
+        step,
+      );
+    }
+
     const seconds = numberFromInput(step, "seconds", 1);
-    return [
-      `        Doc Desktop Step    ${id}    ${title}    ${description}    Wait For Seconds    ${seconds}`,
-    ];
+    return withStaticAnnotations(
+      [
+        `        Doc Desktop Step    ${id}    ${title}    ${description}    Wait For Seconds    ${seconds}`,
+      ],
+      step,
+    );
+  }
+  if (step.action === "assert") {
+    const candidate = selectTargetCandidate(
+      step.target,
+      new Set(["uia", "unity_hierarchy"]),
+      "assert target",
+    );
+    if (readTargetStrategy(candidate) === "uia") {
+      const selectorArgs = unitySelectorArgsFromCandidate(candidate);
+      const timeoutSeconds = readTimingNumber(step, "timeout_seconds", 10);
+      return withStaticAnnotations(
+        [
+          `        Wait For Unity Element${selectorArgs}    timeout_seconds=${timeoutSeconds}`,
+          `        Save Step Screenshot    ${id}`,
+        ],
+        step,
+      );
+    }
+
+    const expectedPath = readUnityHierarchyPathFromCandidate(candidate);
+    return withStaticAnnotations(
+      [
+        "        ${selected_hierarchy}=    Get Unity Selected Hierarchy Path",
+        `        Should Be Equal As Strings    \${selected_hierarchy}    ${expectedPath}`,
+        `        Save Step Screenshot    ${id}`,
+      ],
+      step,
+    );
   }
   if (step.action === "press_keys") {
     const shortcut = readStringFromInput(step, "shortcut");
     if (shortcut !== "") {
-      return [
-        `        Doc Desktop Step    ${id}    ${title}    ${description}    Send Unity Shortcut    ${toRobotCell(shortcut)}`,
-      ];
+      return withStaticAnnotations(
+        [
+          `        Doc Desktop Step    ${id}    ${title}    ${description}    Send Unity Shortcut    ${toRobotCell(shortcut)}`,
+        ],
+        step,
+      );
     }
     const keys = readStringFromInput(step, "keys");
-    return [
-      `        Doc Desktop Step    ${id}    ${title}    ${description}    Press Unity Keys    ${toRobotCell(keys || "{ENTER}")}`,
-    ];
+    return withStaticAnnotations(
+      [
+        `        Doc Desktop Step    ${id}    ${title}    ${description}    Press Unity Keys    ${toRobotCell(keys || "{ENTER}")}`,
+      ],
+      step,
+    );
   }
   if (step.action === "open_menu") {
     const menuPath = requiredStringFromInput(step, "menu_path");
-    return [
-      `        Doc Desktop Step    ${id}    ${title}    ${description}    Open Unity Top Menu    ${menuPath}`,
-    ];
+    return withStaticAnnotations(
+      [
+        `        Doc Desktop Step    ${id}    ${title}    ${description}    Open Unity Top Menu    ${menuPath}`,
+      ],
+      step,
+    );
   }
-  if (step.action === "screenshot") {
-    const path = readStringFromInput(step, "path");
-    if (path !== "") {
-      return [`        Capture Unity Screenshot    ${toRobotCell(path)}`];
-    }
-    return [
-      `        Doc Desktop Step    ${id}    ${title}    ${description}    No Operation`,
-    ];
+  if (step.action === "select_hierarchy") {
+    const candidate = selectTargetCandidate(
+      step.target,
+      new Set(["unity_hierarchy"]),
+      "select_hierarchy target",
+    );
+    const path = readUnityHierarchyPathFromCandidate(candidate);
+    return withStaticAnnotations(
+      [
+        `        \${annotation}=    Wait Until Keyword Succeeds    45 sec    1 sec    Select Unity Hierarchy Object    hierarchy_path=${path}    timeout_seconds=4.0`,
+        `        Save Step Screenshot    ${id}`,
+        "        Emit Annotation Metadata    ${annotation}",
+      ],
+      step,
+    );
+  }
+  if (
+    step.action === "screenshot" ||
+    step.action === "start_video" ||
+    step.action === "stop_video" ||
+    step.action === "emit_annotation"
+  ) {
+    return withStaticAnnotations(
+      [
+        `        Doc Desktop Step    ${id}    ${title}    ${description}    No Operation`,
+      ],
+      step,
+    );
   }
 
   throw new Error(`Unsupported unity action: ${step.action}`);
+}
+
+function withStaticAnnotations(
+  lines: string[],
+  step: ScenarioStepAction,
+): string[] {
+  const annotationLines = staticAnnotationLines(step);
+  if (annotationLines.length === 0) {
+    return lines;
+  }
+  return [...lines, ...annotationLines];
+}
+
+function staticAnnotationLines(step: ScenarioStepAction): string[] {
+  if (!step.annotations || step.annotations.length === 0) {
+    return [];
+  }
+  const payload = JSON.stringify(step.annotations).replaceAll(
+    "'''",
+    "\\u0027\\u0027\\u0027",
+  );
+  return [
+    `        \${annotations}=    Evaluate    json.loads(r'''${payload}''')    modules=json`,
+    "        Emit Annotation List Metadata    ${annotations}",
+  ];
 }
 
 function commonKeywordLines(): string[] {
@@ -307,6 +1001,9 @@ function commonKeywordLines(): string[] {
     "",
     "Save Step Screenshot",
     "    [Arguments]    ${id}",
+    "    IF    not ${screenshot_enabled}",
+    "        RETURN",
+    "    END",
     "    ${image_path}=    Set Variable    ${OUTPUT DIR}${/}screenshots${/}${id}.png",
     "    Take Screenshot    ${image_path}",
     "",
@@ -320,6 +1017,11 @@ function commonKeywordLines(): string[] {
     "    ${metadata}=    Create Dictionary    annotation=${annotation}",
     "    Emit Step Metadata    ${metadata}",
     "",
+    "Emit Annotation List Metadata",
+    "    [Arguments]    ${annotations}",
+    "    ${metadata}=    Create Dictionary    annotations=${annotations}",
+    "    Emit Step Metadata    ${metadata}",
+    "",
     "Require Unity Project Path",
     "    [Arguments]    ${project_path}",
     "    ${normalized}=    Evaluate    str($project_path).strip()",
@@ -329,7 +1031,6 @@ function commonKeywordLines(): string[] {
     "",
   ];
 }
-
 function webKeywordLines(): string[] {
   return [
     "Doc Web Step",
@@ -349,6 +1050,34 @@ function webKeywordLines(): string[] {
     "    ${metadata}=    Create Dictionary    annotation=${annotation}",
     "    Emit Step Metadata    ${metadata}",
     "",
+    "Doc Web Double Click Step",
+    "    [Arguments]    ${id}    ${title}    ${description}    ${locator}",
+    "    Ensure Artifact Directories",
+    "    ${box}=    Get Element Screen Box    ${locator}",
+    "    Double Click Element    ${locator}",
+    "    Save Step Screenshot    ${id}",
+    "    ${box_dict}=    Create Dictionary    x=${box}[0]    y=${box}[1]    width=${box}[2]    height=${box}[3]",
+    "    ${annotation}=    Create Dictionary    type=click_pulse    box=${box_dict}",
+    "    ${metadata}=    Create Dictionary    annotation=${annotation}",
+    "    Emit Step Metadata    ${metadata}",
+    "",
+    "Doc Web Context Click Step",
+    "    [Arguments]    ${id}    ${title}    ${description}    ${locator}",
+    "    Ensure Artifact Directories",
+    "    ${box}=    Get Element Screen Box    ${locator}",
+    "    Open Context Menu    ${locator}",
+    "    Save Step Screenshot    ${id}",
+    "    ${box_dict}=    Create Dictionary    x=${box}[0]    y=${box}[1]    width=${box}[2]    height=${box}[3]",
+    "    ${annotation}=    Create Dictionary    type=click_pulse    box=${box_dict}",
+    "    ${metadata}=    Create Dictionary    annotation=${annotation}",
+    "    Emit Step Metadata    ${metadata}",
+    "",
+    "Doc Web Assert Step",
+    "    [Arguments]    ${id}    ${title}    ${description}    ${locator}",
+    "    Ensure Artifact Directories",
+    "    Wait Until Element Is Visible    ${locator}",
+    "    Save Step Screenshot    ${id}",
+    "",
     "Doc Web Drag Step",
     "    [Arguments]    ${id}    ${title}    ${description}    ${source_locator}    ${target_locator}",
     "    Ensure Artifact Directories",
@@ -358,23 +1087,13 @@ function webKeywordLines(): string[] {
     "    Save Step Screenshot    ${id}",
     "    ${from_point}=    Create Dictionary    x=${source}[4]    y=${source}[5]",
     "    ${to_point}=    Create Dictionary    x=${target}[4]    y=${target}[5]",
-    "    ${annotation}=    Create Dictionary    type=dragDrop    from=${from_point}    to=${to_point}",
+    "    ${annotation}=    Create Dictionary    type=drag_arrow    from=${from_point}    to=${to_point}",
     "    ${metadata}=    Create Dictionary    annotation=${annotation}",
     "    Emit Step Metadata    ${metadata}",
     "",
-    "Normalize Css Selector",
-    "    [Arguments]    ${locator}",
-    "    ${selector}=    Set Variable    ${locator}",
-    "    ${is_css}=    Evaluate    str($locator).startswith('css:')",
-    "    IF    ${is_css}",
-    "        ${selector}=    Evaluate    str($locator)[4:]",
-    "    END",
-    "    RETURN    ${selector}",
-    "",
     "Get Element Screen Box",
     "    [Arguments]    ${locator}",
-    "    ${selector}=    Normalize Css Selector    ${locator}",
-    "    ${box}=    Execute JavaScript    const selector = arguments[0]; const el = document.querySelector(selector); if (!el) { return null; } const rect = el.getBoundingClientRect(); const sx = window.screenX ?? window.screenLeft ?? 0; const sy = window.screenY ?? window.screenTop ?? 0; const viewportX = sx + Math.max(0, (window.outerWidth - window.innerWidth) / 2); const viewportY = sy + Math.max(0, window.outerHeight - window.innerHeight); return [Math.round(viewportX + rect.left), Math.round(viewportY + rect.top), Math.round(rect.width), Math.round(rect.height), Math.round(viewportX + rect.left + rect.width / 2), Math.round(viewportY + rect.top + rect.height / 2)];    ARGUMENTS    ${selector}",
+    "    ${box}=    Execute JavaScript    const locator = arguments[0]; let el = null; if (locator.startsWith('css:')) { el = document.querySelector(locator.slice(4)); } else if (locator.startsWith('xpath:')) { const result = document.evaluate(locator.slice(6), document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null); el = result.singleNodeValue; } else { el = document.querySelector(locator); } if (!el) { return null; } const rect = el.getBoundingClientRect(); const sx = window.screenX ?? window.screenLeft ?? 0; const sy = window.screenY ?? window.screenTop ?? 0; const viewportX = sx + Math.max(0, (window.outerWidth - window.innerWidth) / 2); const viewportY = sy + Math.max(0, window.outerHeight - window.innerHeight); return [Math.round(viewportX + rect.left), Math.round(viewportY + rect.top), Math.round(rect.width), Math.round(rect.height), Math.round(viewportX + rect.left + rect.width / 2), Math.round(viewportY + rect.top + rect.height / 2)];    ARGUMENTS    ${locator}",
     "    Should Not Be Equal    ${box}    ${None}",
     "    RETURN    ${box}",
     "",
@@ -386,6 +1105,18 @@ function unityKeywordLines(): string[] {
     "Unity Click Relative And Emit",
     "    [Arguments]    ${x_ratio}    ${y_ratio}    ${box_width}=180    ${box_height}=48    ${wait_seconds}=0.8",
     "    ${annotation}=    Click Unity Relative    ${x_ratio}    ${y_ratio}    box_width=${box_width}    box_height=${box_height}",
+    "    Wait For Seconds    ${wait_seconds}",
+    "    Emit Annotation Metadata    ${annotation}",
+    "",
+    "Unity Double Click Relative And Emit",
+    "    [Arguments]    ${x_ratio}    ${y_ratio}    ${box_width}=180    ${box_height}=48    ${wait_seconds}=0.8",
+    "    ${annotation}=    Double Click Unity Relative    ${x_ratio}    ${y_ratio}    box_width=${box_width}    box_height=${box_height}",
+    "    Wait For Seconds    ${wait_seconds}",
+    "    Emit Annotation Metadata    ${annotation}",
+    "",
+    "Unity Right Click Relative And Emit",
+    "    [Arguments]    ${x_ratio}    ${y_ratio}    ${box_width}=180    ${box_height}=48    ${wait_seconds}=0.8",
+    "    ${annotation}=    Right Click Unity Relative    ${x_ratio}    ${y_ratio}    box_width=${box_width}    box_height=${box_height}",
     "    Wait For Seconds    ${wait_seconds}",
     "    Emit Annotation Metadata    ${annotation}",
     "",
@@ -472,6 +1203,22 @@ function readUnityWindowHint(scenario: AutomationScenario): string {
     return defaultHint;
   }
   return readMetadataString(scenario, "target_window_hint") || "Unity";
+}
+
+function readScreenshotOutputEnabled(scenario: AutomationScenario): boolean {
+  const outputs = scenario.outputs;
+  if (!outputs || typeof outputs !== "object") {
+    return true;
+  }
+  const screenshotsValue = (outputs as Record<string, unknown>).screenshots;
+  if (!screenshotsValue || typeof screenshotsValue !== "object") {
+    return true;
+  }
+  const screenshots = screenshotsValue as Record<string, unknown>;
+  if (typeof screenshots.enabled === "boolean") {
+    return screenshots.enabled;
+  }
+  return true;
 }
 
 function readVariableDefault(
@@ -563,6 +1310,27 @@ function numberFromInput(
   return `${fallback}`;
 }
 
+function readTimingNumber(
+  step: ScenarioStepAction,
+  key: string,
+  fallback: number,
+): number {
+  if (!step.timing || typeof step.timing !== "object") {
+    return fallback;
+  }
+  const value = step.timing[key];
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value;
+  }
+  if (typeof value === "string" && value.trim() !== "") {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed)) {
+      return parsed;
+    }
+  }
+  return fallback;
+}
+
 function waitSecondsFromTiming(
   step: ScenarioStepAction,
   fallback: number,
@@ -577,33 +1345,130 @@ function waitSecondsFromTiming(
   return `${fallback}`;
 }
 
-function resolveWebLocator(target: unknown): string {
+function collectTargetCandidates(
+  target: unknown,
+  output: Array<Record<string, unknown>>,
+  visited: Set<Record<string, unknown>>,
+): void {
   if (!target || typeof target !== "object") {
-    throw new Error("web step requires target.");
+    return;
   }
-  const targetRecord = target as Record<string, unknown>;
-  const strategy = String(targetRecord.strategy ?? "");
-  if (strategy !== "web") {
-    throw new Error(`web target strategy must be "web", got: ${strategy}`);
+  const record = target as Record<string, unknown>;
+  if (visited.has(record)) {
+    return;
   }
-  const web = targetRecord.web;
+  visited.add(record);
+  output.push(record);
+
+  const fallbacks = record.fallbacks;
+  if (!Array.isArray(fallbacks)) {
+    return;
+  }
+  for (const fallback of fallbacks) {
+    collectTargetCandidates(fallback, output, visited);
+  }
+}
+
+function selectTargetCandidate(
+  target: unknown,
+  allowedStrategies: Set<string>,
+  context: string,
+): Record<string, unknown> {
+  const candidates: Array<Record<string, unknown>> = [];
+  collectTargetCandidates(
+    target,
+    candidates,
+    new Set<Record<string, unknown>>(),
+  );
+
+  for (const candidate of candidates) {
+    const strategy = readTargetStrategy(candidate);
+    if (allowedStrategies.has(strategy)) {
+      return candidate;
+    }
+  }
+
+  const seenStrategies = candidates
+    .map((candidate) => {
+      try {
+        return readTargetStrategy(candidate);
+      } catch {
+        return "<missing>";
+      }
+    })
+    .join(", ");
+  throw new Error(
+    `No compatible selector for ${context}. allowed=${Array.from(allowedStrategies).join(",")}, seen=${seenStrategies || "none"}`,
+  );
+}
+
+function resolveWebLocator(target: unknown): string {
+  const candidate = selectTargetCandidate(target, new Set(["web"]), "web step");
+  const web = candidate.web;
   if (!web || typeof web !== "object") {
     throw new Error("web target requires web selector object.");
   }
   const selector = web as Record<string, unknown>;
+
   const css = selector.css;
   if (typeof css === "string" && css.trim() !== "") {
     return toRobotCell(`css:${css}`);
   }
+
   const xpath = selector.xpath;
   if (typeof xpath === "string" && xpath.trim() !== "") {
     return toRobotCell(`xpath:${xpath}`);
   }
-  const text = selector.text;
-  if (typeof text === "string" && text.trim() !== "") {
-    return toRobotCell(`//*[contains(normalize-space(.), "${text}")]`);
+
+  const role = typeof selector.role === "string" ? selector.role.trim() : "";
+  const name = typeof selector.name === "string" ? selector.name.trim() : "";
+  const text = typeof selector.text === "string" ? selector.text.trim() : "";
+
+  if (text !== "" && role === "" && name === "") {
+    return toRobotCell(
+      `xpath://*[contains(normalize-space(.), ${escapeXpathLiteral(text)})]`,
+    );
   }
-  throw new Error("web selector requires css/xpath/text.");
+
+  if (role !== "" || name !== "" || text !== "") {
+    const predicates: string[] = [];
+    if (role !== "") {
+      predicates.push(`@role=${escapeXpathLiteral(role)}`);
+    }
+    if (name !== "") {
+      const escapedName = escapeXpathLiteral(name);
+      predicates.push(
+        `(@aria-label=${escapedName} or normalize-space(.)=${escapedName})`,
+      );
+    }
+    if (text !== "") {
+      predicates.push(
+        `contains(normalize-space(.), ${escapeXpathLiteral(text)})`,
+      );
+    }
+    return toRobotCell(`xpath://*[${predicates.join(" and ")}]`);
+  }
+
+  throw new Error("web selector requires css/xpath/role/name/text.");
+}
+
+function escapeXpathLiteral(value: string): string {
+  if (!value.includes("'")) {
+    return `'${value}'`;
+  }
+  if (!value.includes('"')) {
+    return `"${value}"`;
+  }
+  const parts = value.split("'");
+  return `concat(${parts
+    .map((part, index) => {
+      const literal = `'${part}'`;
+      if (index === parts.length - 1) {
+        return literal;
+      }
+      return `${literal}, "\\'", `;
+    })
+    .join("")})`;
 }
 
 function readNestedTarget(
@@ -631,17 +1496,14 @@ function readTargetStrategy(target: unknown): string {
   return strategy;
 }
 
-function unitySelectorArgs(target: unknown, prefix = ""): string {
-  if (!target || typeof target !== "object") {
-    throw new Error("uia target is required.");
+function unitySelectorArgsFromCandidate(
+  candidate: Record<string, unknown>,
+  prefix = "",
+): string {
+  if (readTargetStrategy(candidate) !== "uia") {
+    throw new Error("uia target strategy required.");
   }
-  const targetRecord = target as Record<string, unknown>;
-  if (targetRecord.strategy !== "uia") {
-    throw new Error(
-      `uia target strategy required, got: ${targetRecord.strategy}`,
-    );
-  }
-  const uia = targetRecord.uia;
+  const uia = candidate.uia;
   if (!uia || typeof uia !== "object") {
     throw new Error("uia target requires uia object.");
   }
@@ -670,15 +1532,13 @@ function unitySelectorArgs(target: unknown, prefix = ""): string {
   return `    ${parts.join("    ")}`;
 }
 
-function readUnityHierarchyPath(target: unknown): string {
-  if (!target || typeof target !== "object") {
-    throw new Error("unity_hierarchy target is required.");
-  }
-  const targetRecord = target as Record<string, unknown>;
-  if (targetRecord.strategy !== "unity_hierarchy") {
+function readUnityHierarchyPathFromCandidate(
+  candidate: Record<string, unknown>,
+): string {
+  if (readTargetStrategy(candidate) !== "unity_hierarchy") {
     throw new Error("unity_hierarchy strategy is required.");
   }
-  const hierarchy = targetRecord.unity_hierarchy;
+  const hierarchy = candidate.unity_hierarchy;
   if (!hierarchy || typeof hierarchy !== "object") {
     throw new Error("unity_hierarchy object is required.");
   }
@@ -689,20 +1549,14 @@ function readUnityHierarchyPath(target: unknown): string {
   return toRobotCell(path);
 }
 
-function requiredCoordinate(target: unknown): {
+function requiredCoordinateFromCandidate(candidate: Record<string, unknown>): {
   xRatio: string;
   yRatio: string;
 } {
-  if (!target || typeof target !== "object") {
-    throw new Error("coordinate target is required.");
+  if (readTargetStrategy(candidate) !== "coordinate") {
+    throw new Error("coordinate strategy is required.");
   }
-  const targetRecord = target as Record<string, unknown>;
-  if (targetRecord.strategy !== "coordinate") {
-    throw new Error(
-      `coordinate target strategy required, got: ${targetRecord.strategy}`,
-    );
-  }
-  const coordinate = targetRecord.coordinate;
+  const coordinate = candidate.coordinate;
   if (!coordinate || typeof coordinate !== "object") {
     throw new Error("coordinate object is required.");
   }
@@ -729,4 +1583,39 @@ function toRobotCell(value: string): string {
 function toRobotOptionalCell(value: string): string {
   const normalized = toRobotCell(value);
   return normalized === "" ? "${EMPTY}" : normalized;
+}
+
+function interpolateString(
+  text: string,
+  values: Record<string, unknown>,
+): string {
+  return text.replaceAll(/\$\{([a-zA-Z_][a-zA-Z0-9_.-]*)\}/g, (_, key) => {
+    const value = getPathValue(values, key);
+    if (value === undefined || value === null) {
+      return "";
+    }
+    if (typeof value === "object") {
+      return JSON.stringify(value);
+    }
+    return String(value);
+  });
+}
+
+function resolveTemplate<T>(input: T, values: Record<string, unknown>): T {
+  if (typeof input === "string") {
+    return interpolateString(input, values) as T;
+  }
+  if (Array.isArray(input)) {
+    return input.map((item) => resolveTemplate(item, values)) as T;
+  }
+  if (input && typeof input === "object") {
+    const output: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(
+      input as Record<string, unknown>,
+    )) {
+      output[key] = resolveTemplate(value, values);
+    }
+    return output as T;
+  }
+  return input;
 }

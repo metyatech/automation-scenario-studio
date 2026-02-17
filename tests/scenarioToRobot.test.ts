@@ -131,7 +131,7 @@ describe("scenario to robot", () => {
     );
   });
 
-  it("fails export when control step is present", () => {
+  it("expands control steps and emits static annotation lists", () => {
     const scenario: AutomationScenario = {
       schema_version: "2.0.0",
       scenario_id: "control-example",
@@ -139,19 +139,83 @@ describe("scenario to robot", () => {
       target: "unity",
       metadata: {},
       variables: [],
+      outputs: {
+        screenshots: {
+          enabled: true,
+        },
+      },
       steps: [
         {
-          id: "repeat",
-          title: "Repeat",
+          id: "loop-parts",
+          title: "Loop Parts",
           kind: "control",
-          control: "repeat",
-          count: 2,
+          control: "for_each",
+          items_expression: '["Ear_L","Ear_R"]',
+          item_variable: "part",
+          steps: [
+            {
+              id: "open-part-menu",
+              title: "Open ${part}",
+              kind: "action",
+              action: "open_menu",
+              input: {
+                menu_path: "Tools/${part}",
+              },
+              annotations: [
+                {
+                  type: "label",
+                  text: "${part}",
+                },
+              ],
+            },
+          ],
         },
       ],
     };
 
-    expect(() => generateRobotSuiteFromScenario(scenario)).toThrow(
-      "Unsupported control step",
-    );
+    const suite = generateRobotSuiteFromScenario(scenario);
+    expect(suite).toContain("Open Unity Top Menu    Tools/Ear_L");
+    expect(suite).toContain("Open Unity Top Menu    Tools/Ear_R");
+    expect(suite).toContain("Emit Annotation List Metadata");
+  });
+
+  it("uses selector fallbacks when primary strategy is unsupported", () => {
+    const scenario: AutomationScenario = {
+      schema_version: "2.0.0",
+      scenario_id: "fallback-example",
+      name: "Fallback Example",
+      target: "web",
+      metadata: {
+        start_url: "https://example.com",
+        browser: "chrome",
+      },
+      variables: [],
+      steps: [
+        {
+          id: "click-link",
+          title: "Click link",
+          kind: "action",
+          action: "click",
+          target: {
+            strategy: "image",
+            image: {
+              path: "missing.png",
+            },
+            fallbacks: [
+              {
+                strategy: "web",
+                web: {
+                  css: "a.more",
+                },
+              },
+            ],
+          },
+        },
+      ],
+    };
+
+    const suite = generateRobotSuiteFromScenario(scenario);
+    expect(suite).toContain("Doc Web Click Step    click-link");
+    expect(suite).toContain("css:a.more");
   });
 });

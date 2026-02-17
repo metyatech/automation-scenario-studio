@@ -17,6 +17,11 @@ import type {
 import { loadScenarioFile } from "./scenarioSpec.js";
 import { generateRobotSuiteFromScenario } from "./scenarioToRobot.js";
 
+type RendererAnnotationSpec = Parameters<typeof annotateImage>[1];
+type RendererVideoTimelineEvent = Parameters<typeof annotateVideo>[2][number];
+type RendererRunArtifacts = Parameters<typeof renderMarkdownFromArtifacts>[0];
+type RendererStepArtifact = RendererRunArtifacts["steps"][number];
+
 export type RunRobotCommandOptions = {
   suitePath: string;
   outputDir?: string;
@@ -139,7 +144,10 @@ export async function runRobotCommand(
     options.markdownPath ?? join(outputDir, `${artifacts.scenarioId}.md`),
   );
 
-  await renderMarkdownFromArtifacts(artifacts, markdownPath);
+  await renderMarkdownFromArtifacts(
+    toRendererRunArtifacts(artifacts),
+    markdownPath,
+  );
 
   return {
     scenarioId: artifacts.scenarioId,
@@ -151,8 +159,17 @@ export async function runRobotCommand(
 
 async function annotateStepImages(steps: StepArtifact[]): Promise<void> {
   for (const step of steps) {
-    if (isDrawableAnnotation(step.annotation)) {
-      await annotateImage(step.imagePath, step.annotation);
+    for (const annotation of stepAnnotations(step)) {
+      if (!isDrawableAnnotation(annotation)) {
+        continue;
+      }
+
+      const rendererAnnotation = toRendererAnnotation(annotation);
+      if (!rendererAnnotation) {
+        continue;
+      }
+
+      await annotateImage(step.imagePath, rendererAnnotation);
     }
   }
 }
@@ -166,7 +183,8 @@ async function annotateStepVideo(
   }
 
   const events = toTimelineEvents(artifacts.steps);
-  if (events.length === 0) {
+  const rendererEvents = toRendererTimelineEvents(events);
+  if (rendererEvents.length === 0) {
     return artifacts.videoPath ?? artifacts.rawVideoPath;
   }
 
@@ -175,7 +193,7 @@ async function annotateStepVideo(
     "video",
     `${artifacts.scenarioId}-annotated.mp4`,
   );
-  await annotateVideo(artifacts.rawVideoPath, annotatedPath, events);
+  await annotateVideo(artifacts.rawVideoPath, annotatedPath, rendererEvents);
   return annotatedPath;
 }
 
@@ -189,17 +207,25 @@ export function toTimelineEvents(steps: StepArtifact[]): VideoTimelineEvent[] {
     return [];
   }
 
-  return steps
-    .map((step) => toTimelineEvent(step, firstStartedAtMs))
-    .filter((event): event is VideoTimelineEvent => Boolean(event));
+  const events: VideoTimelineEvent[] = [];
+  for (const step of steps) {
+    for (const annotation of stepAnnotations(step)) {
+      const event = toTimelineEvent(step, annotation, firstStartedAtMs);
+      if (event) {
+        events.push(event);
+      }
+    }
+  }
+  return events;
 }
 
 function toTimelineEvent(
   step: StepArtifact,
+  annotation: AnnotationSpec,
   runStartMs: number,
 ): VideoTimelineEvent | undefined {
   if (
-    !isDrawableAnnotation(step.annotation) ||
+    !isDrawableAnnotation(annotation) ||
     typeof step.startedAtMs !== "number" ||
     typeof step.endedAtMs !== "number"
   ) {
@@ -211,32 +237,268 @@ function toTimelineEvent(
     Math.max(step.endedAtMs - runStartMs, step.startedAtMs - runStartMs + 1000),
   );
 
-  if (step.annotation.type === "click") {
+  if (
+    annotation.type === "click" ||
+    annotation.type === "click_pulse" ||
+    annotation.type === "highlight_box"
+  ) {
     return {
-      type: "click",
+      type: annotation.type,
       startSeconds,
       endSeconds,
-      box: step.annotation.box,
+      box: annotation.box,
     };
   }
 
-  return {
-    type: "dragDrop",
-    startSeconds,
-    endSeconds,
-    from: step.annotation.from,
-    to: step.annotation.to,
-  };
+  if (annotation.type === "dragDrop" || annotation.type === "drag_arrow") {
+    return {
+      type: annotation.type,
+      startSeconds,
+      endSeconds,
+      from: annotation.from,
+      to: annotation.to,
+    };
+  }
+
+  if (annotation.type === "label") {
+    return {
+      type: "label",
+      startSeconds,
+      endSeconds,
+      text: annotation.text,
+      point: annotation.point,
+      box: annotation.box,
+    };
+  }
+
+  return undefined;
 }
 
 export function isDrawableAnnotation(
   annotation: AnnotationSpec | undefined,
-): annotation is Extract<AnnotationSpec, { type: "click" | "dragDrop" }> {
+): annotation is Extract<
+  AnnotationSpec,
+  {
+    type:
+      | "click"
+      | "click_pulse"
+      | "highlight_box"
+      | "dragDrop"
+      | "drag_arrow"
+      | "label";
+  }
+> {
   if (!annotation) {
     return false;
   }
 
-  return annotation.type === "click" || annotation.type === "dragDrop";
+  if (
+    annotation.type === "click" ||
+    annotation.type === "click_pulse" ||
+    annotation.type === "highlight_box"
+  ) {
+    return hasBox(annotation.box);
+  }
+
+  if (annotation.type === "dragDrop" || annotation.type === "drag_arrow") {
+    return hasPoint(annotation.from) && hasPoint(annotation.to);
+  }
+
+  if (annotation.type === "label") {
+    if (typeof annotation.text !== "string" || annotation.text.trim() === "") {
+      return false;
+    }
+    if (annotation.point !== undefined && !hasPoint(annotation.point)) {
+      return false;
+    }
+    if (annotation.box !== undefined && !hasBox(annotation.box)) {
+      return false;
+    }
+    return true;
+  }
+
+  return false;
+}
+
+function stepAnnotations(step: StepArtifact): AnnotationSpec[] {
+  const annotations: AnnotationSpec[] = [];
+  if (Array.isArray(step.annotations)) {
+    annotations.push(...step.annotations);
+  }
+  if (step.annotation) {
+    annotations.push(step.annotation);
+  }
+  return annotations;
+}
+
+function toRendererAnnotation(
+  annotation: Extract<
+    AnnotationSpec,
+    {
+      type:
+        | "click"
+        | "click_pulse"
+        | "highlight_box"
+        | "dragDrop"
+        | "drag_arrow"
+        | "label";
+    }
+  >,
+): RendererAnnotationSpec | undefined {
+  if (
+    annotation.type === "click" ||
+    annotation.type === "click_pulse" ||
+    annotation.type === "highlight_box"
+  ) {
+    return {
+      type: annotation.type,
+      box: annotation.box,
+    };
+  }
+
+  if (annotation.type === "dragDrop" || annotation.type === "drag_arrow") {
+    return {
+      type: "dragDrop",
+      from: annotation.from,
+      to: annotation.to,
+    };
+  }
+
+  if (annotation.type === "label") {
+    return {
+      type: "label",
+      text: annotation.text,
+      point: annotation.point,
+      box: annotation.box,
+    };
+  }
+
+  return undefined;
+}
+
+function toRendererTimelineEvents(
+  events: VideoTimelineEvent[],
+): RendererVideoTimelineEvent[] {
+  return events
+    .map((event) => toRendererTimelineEvent(event))
+    .filter(
+      (event): event is RendererVideoTimelineEvent => event !== undefined,
+    );
+}
+
+function toRendererTimelineEvent(
+  event: VideoTimelineEvent,
+): RendererVideoTimelineEvent | undefined {
+  if (
+    event.type === "click" ||
+    event.type === "click_pulse" ||
+    event.type === "highlight_box"
+  ) {
+    return {
+      type: event.type,
+      startSeconds: event.startSeconds,
+      endSeconds: event.endSeconds,
+      box: event.box,
+    };
+  }
+
+  if (event.type === "dragDrop" || event.type === "drag_arrow") {
+    return {
+      type: "dragDrop",
+      startSeconds: event.startSeconds,
+      endSeconds: event.endSeconds,
+      from: event.from,
+      to: event.to,
+    };
+  }
+
+  if (event.type === "label") {
+    return {
+      type: "label",
+      startSeconds: event.startSeconds,
+      endSeconds: event.endSeconds,
+      text: event.text,
+      point: event.point,
+      box: event.box,
+    };
+  }
+
+  return undefined;
+}
+
+function toRendererRunArtifacts(artifacts: RunArtifacts): RendererRunArtifacts {
+  return {
+    scenarioId: artifacts.scenarioId,
+    title: artifacts.title,
+    steps: artifacts.steps.map((step) => toRendererStepArtifact(step)),
+    videoPath: artifacts.videoPath,
+    rawVideoPath: artifacts.rawVideoPath,
+  };
+}
+
+function toRendererStepArtifact(step: StepArtifact): RendererStepArtifact {
+  const rendererStep: RendererStepArtifact = {
+    id: step.id,
+    title: step.title,
+    imagePath: step.imagePath,
+  };
+
+  if (step.description) {
+    rendererStep.description = step.description;
+  }
+  if (typeof step.startedAtMs === "number") {
+    rendererStep.startedAtMs = step.startedAtMs;
+  }
+  if (typeof step.endedAtMs === "number") {
+    rendererStep.endedAtMs = step.endedAtMs;
+  }
+
+  const firstDrawable = stepAnnotations(step).find((annotation) =>
+    isDrawableAnnotation(annotation),
+  );
+  if (firstDrawable) {
+    const rendererAnnotation = toRendererAnnotation(firstDrawable);
+    if (rendererAnnotation) {
+      rendererStep.annotation = rendererAnnotation;
+    }
+  }
+
+  return rendererStep;
+}
+
+function hasBox(value: unknown): value is {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+} {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const box = value as Record<string, unknown>;
+  return (
+    typeof box.x === "number" &&
+    Number.isFinite(box.x) &&
+    typeof box.y === "number" &&
+    Number.isFinite(box.y) &&
+    typeof box.width === "number" &&
+    Number.isFinite(box.width) &&
+    typeof box.height === "number" &&
+    Number.isFinite(box.height)
+  );
+}
+
+function hasPoint(value: unknown): value is { x: number; y: number } {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const point = value as Record<string, unknown>;
+  return (
+    typeof point.x === "number" &&
+    Number.isFinite(point.x) &&
+    typeof point.y === "number" &&
+    Number.isFinite(point.y)
+  );
 }
 
 function toSeconds(milliseconds: number): number {

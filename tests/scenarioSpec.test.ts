@@ -90,4 +90,70 @@ describe("scenario spec variable resolution", () => {
       "required variable is not resolved: menu_path",
     );
   });
+
+  it("normalizes control step with nested branches and loop metadata", () => {
+    const scenario = normalizeScenario(
+      {
+        schema_version: "2.0.0",
+        scenario_id: "control-normalize",
+        name: "Control Normalize",
+        target: "unity",
+        metadata: {},
+        variables: [],
+        steps: [
+          {
+            id: "loop-parts",
+            title: "Loop Parts",
+            kind: "control",
+            control: "for_each",
+            items_expression: '["Ear_L","Ear_R"]',
+            item_variable: "part",
+            steps: [
+              {
+                id: "select-part",
+                title: "Select ${part}",
+                kind: "action",
+                action: "open_menu",
+                input: {
+                  menu_path: "Tools/${part}",
+                },
+              },
+            ],
+          },
+          {
+            id: "if-example",
+            title: "If Example",
+            kind: "control",
+            control: "if",
+            branches: [
+              {
+                when: "true",
+                steps: [
+                  {
+                    id: "branch-step",
+                    title: "Branch step",
+                    kind: "action",
+                    action: "wait_for",
+                    input: {
+                      seconds: 0.1,
+                    },
+                  },
+                ],
+              },
+            ],
+          },
+        ],
+      },
+      "D:/tmp/control-normalize.scenario.json",
+    );
+
+    validateScenario(scenario);
+    const controlStep = scenario.steps[0];
+    expect(controlStep.kind).toBe("control");
+    expect(controlStep).toMatchObject({
+      control: "for_each",
+      item_variable: "part",
+      items_expression: '["Ear_L","Ear_R"]',
+    });
+  });
 });

@@ -6,6 +6,9 @@ export type ScenarioTarget = "unity" | "web" | "desktop" | "hybrid";
 export type ScenarioVariable = {
   id: string;
   type: string;
+  bindings?: Record<string, unknown>;
+  validation?: Record<string, unknown>;
+  runtime?: Record<string, unknown>;
   required?: boolean;
   default?: unknown;
   [key: string]: unknown;
@@ -33,7 +36,20 @@ export type ScenarioStepControl = {
   description?: string;
   kind: "control";
   control: string;
+  expression?: string;
+  items_expression?: string;
+  item_variable?: string;
+  max_iterations?: number;
+  branches?: ScenarioControlBranch[];
+  steps?: ScenarioStep[];
+  catch_steps?: ScenarioStep[];
+  finally_steps?: ScenarioStep[];
   [key: string]: unknown;
+};
+
+export type ScenarioControlBranch = {
+  when: string;
+  steps: ScenarioStep[];
 };
 
 export type ScenarioStepGroup = {
@@ -150,6 +166,70 @@ function normalizeActionStep(
   };
 }
 
+function normalizeBranch(
+  branch: Record<string, unknown>,
+  index: number,
+): ScenarioControlBranch {
+  const branchSteps = Array.isArray(branch.steps) ? branch.steps : [];
+  return {
+    when: String(branch.when ?? (index === 0 ? "true" : "false")).trim(),
+    steps: branchSteps
+      .filter(
+        (child): child is Record<string, unknown> =>
+          Boolean(child) && typeof child === "object",
+      )
+      .map((child, childIndex) => normalizeStep(child, childIndex)),
+  };
+}
+
+function normalizeNestedSteps(input: unknown): ScenarioStep[] {
+  const nested = Array.isArray(input) ? input : [];
+  return nested
+    .filter(
+      (child): child is Record<string, unknown> =>
+        Boolean(child) && typeof child === "object",
+    )
+    .map((child, childIndex) => normalizeStep(child, childIndex));
+}
+
+function normalizeControlStep(
+  step: Record<string, unknown>,
+  index: number,
+): ScenarioStepControl {
+  return {
+    id: sanitizeStepId(String(step.id ?? `control-${index + 1}`)),
+    title: String(step.title ?? `control-${index + 1}`),
+    description:
+      typeof step.description === "string" ? step.description : undefined,
+    kind: "control",
+    control: String(step.control ?? "").trim(),
+    expression:
+      typeof step.expression === "string" ? step.expression : undefined,
+    items_expression:
+      typeof step.items_expression === "string"
+        ? step.items_expression
+        : undefined,
+    item_variable:
+      typeof step.item_variable === "string" ? step.item_variable : undefined,
+    max_iterations:
+      typeof step.max_iterations === "number" &&
+      Number.isInteger(step.max_iterations)
+        ? step.max_iterations
+        : undefined,
+    branches: Array.isArray(step.branches)
+      ? step.branches
+          .filter(
+            (branch): branch is Record<string, unknown> =>
+              Boolean(branch) && typeof branch === "object",
+          )
+          .map((branch, branchIndex) => normalizeBranch(branch, branchIndex))
+      : undefined,
+    steps: normalizeNestedSteps(step.steps),
+    catch_steps: normalizeNestedSteps(step.catch_steps),
+    finally_steps: normalizeNestedSteps(step.finally_steps),
+  };
+}
+
 function normalizeStep(
   step: Record<string, unknown>,
   index: number,
@@ -174,15 +254,7 @@ function normalizeStep(
   }
 
   if (kind === "control") {
-    const control = String(step.control ?? "").trim();
-    return {
-      id: sanitizeStepId(String(step.id ?? `control-${index + 1}`)),
-      title: String(step.title ?? `control-${index + 1}`),
-      description:
-        typeof step.description === "string" ? step.description : undefined,
-      kind: "control",
-      control,
-    };
+    return normalizeControlStep(step, index);
   }
 
   return normalizeActionStep(step, index);
@@ -318,6 +390,49 @@ function validateSteps(steps: ScenarioStep[]): void {
       if (!step.control || step.control.trim() === "") {
         throw new Error(`step.control is required: ${step.id}`);
       }
+      if (step.steps && step.steps.length > 0) {
+        validateSteps(step.steps);
+      }
+      if (step.catch_steps && step.catch_steps.length > 0) {
+        validateSteps(step.catch_steps);
+      }
+      if (step.finally_steps && step.finally_steps.length > 0) {
+        validateSteps(step.finally_steps);
+      }
+      if (step.branches && step.branches.length > 0) {
+        for (const branch of step.branches) {
+          if (!branch.when || branch.when.trim() === "") {
+            throw new Error(`control branch.when is required: ${step.id}`);
+          }
+          if (!Array.isArray(branch.steps) || branch.steps.length === 0) {
+            throw new Error(`control branch.steps is required: ${step.id}`);
+          }
+          validateSteps(branch.steps);
+        }
+      }
+      if (step.control === "for_each") {
+        if (
+          !step.items_expression ||
+          step.items_expression.trim() === "" ||
+          !step.item_variable ||
+          step.item_variable.trim() === ""
+        ) {
+          throw new Error(
+            `for_each requires items_expression and item_variable: ${step.id}`,
+          );
+        }
+      }
+      if (step.control === "while") {
+        if (!step.expression || step.expression.trim() === "") {
+          throw new Error(`while requires expression: ${step.id}`);
+        }
+        if (
+          step.max_iterations !== undefined &&
+          (!Number.isInteger(step.max_iterations) || step.max_iterations < 1)
+        ) {
+          throw new Error(`while max_iterations must be >= 1: ${step.id}`);
+        }
+      }
       continue;
     }
     if (!Array.isArray(step.steps) || step.steps.length === 0) {
@@ -325,6 +440,52 @@ function validateSteps(steps: ScenarioStep[]): void {
     }
     validateSteps(step.steps);
   }
+}
+
+function readProfileExtends(profile: {
+  variables?: Record<string, unknown>;
+  [key: string]: unknown;
+}): string | undefined {
+  const value = profile.extends;
+  if (typeof value !== "string") {
+    return undefined;
+  }
+  const normalized = value.trim();
+  return normalized === "" ? undefined : normalized;
+}
+
+function resolveProfileVariables(
+  profileName: string,
+  profiles: Record<string, { variables?: Record<string, unknown> }> | undefined,
+): Record<string, unknown> {
+  if (!profiles || !profiles[profileName]) {
+    throw new Error(`Profile not found: ${profileName}`);
+  }
+
+  const resolved: Record<string, unknown> = {};
+  const visiting = new Set<string>();
+
+  const applyProfile = (name: string): void => {
+    const profile = profiles[name];
+    if (!profile) {
+      throw new Error(`Profile not found: ${name}`);
+    }
+    if (visiting.has(name)) {
+      throw new Error(`Profile extends cycle detected: ${name}`);
+    }
+    visiting.add(name);
+    const parent = readProfileExtends(profile);
+    if (parent) {
+      applyProfile(parent);
+    }
+    if (profile.variables && typeof profile.variables === "object") {
+      Object.assign(resolved, profile.variables);
+    }
+    visiting.delete(name);
+  };
+
+  applyProfile(profileName);
+  return resolved;
 }
 
 function resolveVariableValues(
@@ -340,13 +501,10 @@ function resolveVariableValues(
 
   const profileName = options?.profile?.trim();
   if (profileName) {
-    const profile = scenario.profiles?.[profileName];
-    if (!profile) {
-      throw new Error(`Profile not found: ${profileName}`);
-    }
-    if (profile.variables && typeof profile.variables === "object") {
-      Object.assign(defaults, profile.variables);
-    }
+    Object.assign(
+      defaults,
+      resolveProfileVariables(profileName, scenario.profiles),
+    );
   }
 
   if (options?.variables) {
@@ -415,7 +573,35 @@ function resolveSteps(
       };
     }
     if (step.kind === "control") {
-      return resolveValue(step, values);
+      return {
+        ...resolveValue(step, values),
+        title: interpolateString(step.title, values),
+        description: step.description
+          ? interpolateString(step.description, values)
+          : undefined,
+        expression: step.expression
+          ? interpolateString(step.expression, values)
+          : undefined,
+        items_expression: step.items_expression
+          ? interpolateString(step.items_expression, values)
+          : undefined,
+        item_variable: step.item_variable
+          ? interpolateString(step.item_variable, values)
+          : undefined,
+        branches: step.branches
+          ? step.branches.map((branch) => ({
+              when: interpolateString(branch.when, values),
+              steps: resolveSteps(branch.steps, values),
+            }))
+          : undefined,
+        steps: step.steps ? resolveSteps(step.steps, values) : undefined,
+        catch_steps: step.catch_steps
+          ? resolveSteps(step.catch_steps, values)
+          : undefined,
+        finally_steps: step.finally_steps
+          ? resolveSteps(step.finally_steps, values)
+          : undefined,
+      };
     }
     return {
       ...step,
