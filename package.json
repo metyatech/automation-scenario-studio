@@ -12,6 +12,9 @@
     "dist",
     "python"
   ],
+  "publishConfig": {
+    "access": "public"
+  },
   "engines": {
     "node": ">=20"
   },
