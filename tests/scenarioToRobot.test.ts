@@ -218,4 +218,72 @@ describe("scenario to robot", () => {
     expect(suite).toContain("Doc Web Click Step    click-link");
     expect(suite).toContain("css:a.more");
   });
+
+  it("uses menu path candidates for unity open_menu steps", () => {
+    const scenario: AutomationScenario = {
+      schema_version: "2.0.0",
+      scenario_id: "unity-menu-fallbacks",
+      name: "Unity Menu Fallbacks",
+      target: "unity",
+      metadata: {},
+      variables: [],
+      steps: [
+        {
+          id: "open-control-panel",
+          title: "Open control panel",
+          kind: "action",
+          action: "open_menu",
+          input: {
+            menu_path_candidates: [
+              "VRChat SDK/Show Control Panel",
+              "VRChat SDK/Utilities/Show Control Panel",
+            ],
+          },
+        },
+      ],
+    };
+
+    const suite = generateRobotSuiteFromScenario(scenario);
+    expect(suite).toContain("Open Unity Top Menu With Fallbacks");
+    expect(suite).toContain("VRChat SDK/Show Control Panel");
+    expect(suite).toContain("VRChat SDK/Utilities/Show Control Panel");
+  });
+
+  it("uses hierarchy path candidates for select_hierarchy", () => {
+    const scenario: AutomationScenario = {
+      schema_version: "2.0.0",
+      scenario_id: "unity-hierarchy-fallbacks",
+      name: "Unity Hierarchy Fallbacks",
+      target: "unity",
+      metadata: {},
+      variables: [],
+      steps: [
+        {
+          id: "select-root",
+          title: "Select root",
+          kind: "action",
+          action: "select_hierarchy",
+          target: {
+            strategy: "unity_hierarchy",
+            unity_hierarchy: {
+              path: "AvatarRoot",
+            },
+            fallbacks: [
+              {
+                strategy: "unity_hierarchy",
+                unity_hierarchy: {
+                  path: "Body/AvatarRoot",
+                },
+              },
+            ],
+          },
+        },
+      ],
+    };
+
+    const suite = generateRobotSuiteFromScenario(scenario);
+    expect(suite).toContain("Select Unity Hierarchy Object With Fallbacks");
+    expect(suite).toContain("AvatarRoot");
+    expect(suite).toContain("Body/AvatarRoot");
+  });
 });

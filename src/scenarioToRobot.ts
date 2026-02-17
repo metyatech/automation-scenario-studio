@@ -920,6 +920,19 @@ function toUnityStepLines(step: ScenarioStepAction): string[] {
     );
   }
   if (step.action === "open_menu") {
+    const menuPathCandidates = readStringListFromInput(
+      step,
+      "menu_path_candidates",
+    ).map((candidate) => toRobotCell(candidate));
+    if (menuPathCandidates.length > 0) {
+      return withStaticAnnotations(
+        [
+          `        Doc Desktop Step    ${id}    ${title}    ${description}    Open Unity Top Menu With Fallbacks    ${menuPathCandidates.join("    ")}`,
+        ],
+        step,
+      );
+    }
+
     const menuPath = requiredStringFromInput(step, "menu_path");
     return withStaticAnnotations(
       [
@@ -929,15 +942,22 @@ function toUnityStepLines(step: ScenarioStepAction): string[] {
     );
   }
   if (step.action === "select_hierarchy") {
-    const candidate = selectTargetCandidate(
+    const candidates = selectTargetCandidates(
       step.target,
       new Set(["unity_hierarchy"]),
       "select_hierarchy target",
     );
-    const path = readUnityHierarchyPathFromCandidate(candidate);
+    const paths = candidates.map((candidate) =>
+      readUnityHierarchyPathFromCandidate(candidate),
+    );
+    const keyword =
+      paths.length > 1
+        ? `Select Unity Hierarchy Object With Fallbacks    ${paths.join("    ")}`
+        : `Select Unity Hierarchy Object    hierarchy_path=${paths[0]}    timeout_seconds=4.0`;
+
     return withStaticAnnotations(
       [
-        `        \${annotation}=    Wait Until Keyword Succeeds    45 sec    1 sec    Select Unity Hierarchy Object    hierarchy_path=${path}    timeout_seconds=4.0`,
+        `        \${annotation}=    Wait Until Keyword Succeeds    45 sec    1 sec    ${keyword}`,
         `        Save Step Screenshot    ${id}`,
         "        Emit Annotation Metadata    ${annotation}",
       ],
@@ -1102,6 +1122,30 @@ function webKeywordLines(): string[] {
 
 function unityKeywordLines(): string[] {
   return [
+    "Open Unity Top Menu With Fallbacks",
+    "    [Arguments]    @{menu_paths}",
+    "    ${last_error}=    Set Variable    ${EMPTY}",
+    "    FOR    ${menu_path}    IN    @{menu_paths}",
+    "        ${status}    ${result}=    Run Keyword And Ignore Error    Open Unity Top Menu    ${menu_path}",
+    "        IF    '${status}' == 'PASS'",
+    "            RETURN",
+    "        END",
+    "        ${last_error}=    Set Variable    ${result}",
+    "    END",
+    "    Fail    Failed to open Unity menu using candidates: ${last_error}",
+    "",
+    "Select Unity Hierarchy Object With Fallbacks",
+    "    [Arguments]    @{hierarchy_paths}",
+    "    ${last_error}=    Set Variable    ${EMPTY}",
+    "    FOR    ${path}    IN    @{hierarchy_paths}",
+    "        ${status}    ${result}=    Run Keyword And Ignore Error    Select Unity Hierarchy Object    hierarchy_path=${path}    timeout_seconds=4.0",
+    "        IF    '${status}' == 'PASS'",
+    "            RETURN    ${result}",
+    "        END",
+    "        ${last_error}=    Set Variable    ${result}",
+    "    END",
+    "    Fail    Failed to select Unity hierarchy object using candidates: ${last_error}",
+    "",
     "Unity Click Relative And Emit",
     "    [Arguments]    ${x_ratio}    ${y_ratio}    ${box_width}=180    ${box_height}=48    ${wait_seconds}=0.8",
     "    ${annotation}=    Click Unity Relative    ${x_ratio}    ${y_ratio}    box_width=${box_width}    box_height=${box_height}",
@@ -1289,6 +1333,22 @@ function readStringFromInput(step: ScenarioStepAction, key: string): string {
   return value;
 }
 
+function readStringListFromInput(
+  step: ScenarioStepAction,
+  key: string,
+): string[] {
+  if (!step.input || typeof step.input !== "object") {
+    return [];
+  }
+  const raw = step.input[key];
+  if (!Array.isArray(raw)) {
+    return [];
+  }
+  return raw
+    .map((item) => (typeof item === "string" ? item.trim() : ""))
+    .filter((item) => item !== "");
+}
+
 function numberFromInput(
   step: ScenarioStepAction,
   key: string,
@@ -1374,6 +1434,15 @@ function selectTargetCandidate(
   allowedStrategies: Set<string>,
   context: string,
 ): Record<string, unknown> {
+  const matches = selectTargetCandidates(target, allowedStrategies, context);
+  return matches[0];
+}
+
+function selectTargetCandidates(
+  target: unknown,
+  allowedStrategies: Set<string>,
+  context: string,
+): Array<Record<string, unknown>> {
   const candidates: Array<Record<string, unknown>> = [];
   collectTargetCandidates(
     target,
@@ -1381,11 +1450,16 @@ function selectTargetCandidate(
     new Set<Record<string, unknown>>(),
   );
 
-  for (const candidate of candidates) {
-    const strategy = readTargetStrategy(candidate);
-    if (allowedStrategies.has(strategy)) {
-      return candidate;
+  const matches = candidates.filter((candidate) => {
+    try {
+      const strategy = readTargetStrategy(candidate);
+      return allowedStrategies.has(strategy);
+    } catch {
+      return false;
     }
+  });
+  if (matches.length > 0) {
+    return matches;
   }
 
   const seenStrategies = candidates
