@@ -22,14 +22,17 @@ npm install @metyatech/automation-scenario-studio
 ## CLI
 
 ```bash
-automation-scenario run-scenario --scenario ./automation/scenarios/web-example.scenario.json --output ./artifacts/web-example --markdown ./docs/controls/auto-web-example.md
+automation-scenario --help
+automation-scenario --version
 
-# profile + variable override
-automation-scenario run-scenario --scenario ./automation/scenarios/unity.scenario.json --profile docs --var unity_window_hint=Unity --var menu_path=Tools/Build
+# run scenario
+automation-scenario run-scenario --scenario ./automation/scenarios/web-example.scenario.json --output ./artifacts/web-example --markdown ./docs/controls/auto-web-example.md
 ```
 
 Parameters:
 
+- `--help`, `-h`: Show help message
+- `--version`, `-V`: Show version number
 - `--scenario` (required for `run-scenario`): scenario JSON path
 - `--output` (optional): artifact directory override
 - `--markdown` (optional): markdown output path override

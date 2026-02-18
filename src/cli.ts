@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 
+import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -14,8 +15,28 @@ type ParsedArgs = {
   variables: Record<string, string>;
 };
 
+function getVersion(): string {
+  const packageJsonPath = resolve(
+    fileURLToPath(import.meta.url),
+    "../../package.json",
+  );
+  const packageJson = JSON.parse(readFileSync(packageJsonPath, "utf-8"));
+  return packageJson.version;
+}
+
 async function main(): Promise<void> {
   const args = process.argv.slice(2);
+
+  if (args.includes("--help") || args.includes("-h")) {
+    printUsage();
+    process.exit(0);
+  }
+
+  if (args.includes("--version") || args.includes("-V")) {
+    process.stdout.write(`${getVersion()}\n`);
+    process.exit(0);
+  }
+
   const command = args[0];
 
   if (command === "run-scenario") {
@@ -76,9 +97,27 @@ export function parseArgs(args: string[]): ParsedArgs {
 function printUsage(): void {
   process.stdout.write(
     [
-      "Usage:",
-      "  automation-scenario run-scenario --scenario <path> [--output <dir>] [--markdown <path>] [--record-video <true|false>] [--profile <name>] [--var <key=value> ...]",
-    ].join("\n"),
+      "Usage: automation-scenario [command] [options]",
+      "",
+      "Commands:",
+      "  run-scenario    Run an automation scenario",
+      "",
+      "Options:",
+      "  -h, --help      Show this help message",
+      "  -V, --version   Show version number",
+      "",
+      "run-scenario options:",
+      "  --scenario <path>        Path to the scenario JSON file (required)",
+      "  --output <dir>           Output directory for artifacts",
+      "  --markdown <path>        Path for the markdown output",
+      "  --record-video <bool>    Whether to record video (true|false)",
+      "  --profile <name>         Profile name to use",
+      "  --var <key=value>        Variable override (can be repeated)",
+      "",
+      "Examples:",
+      "  automation-scenario run-scenario --scenario ./tests/example.json --output ./out",
+      "  automation-scenario run-scenario --scenario ./tests/example.json --profile ci --var env=prod",
+    ].join("\n") + "\n",
   );
 }
 
