@@ -19,7 +19,7 @@
     "prepare": "npm run build",
     "build": "tsc -p tsconfig.build.json",
     "test": "vitest run",
-    "lint": "eslint . --ext .ts",
+    "lint": "eslint .",
     "format": "prettier --check .",
     "format:write": "prettier --write .",
     "typecheck": "tsc -p tsconfig.json --noEmit",

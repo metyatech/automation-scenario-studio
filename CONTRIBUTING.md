@@ -1,23 +1,27 @@
 # Contributing
 
-Thanks for your interest in contributing to `ghws`.
+Thanks for your interest in contributing to `automation-scenario-studio`.
 
-## Scope
+## Development workflow
 
-This repository is a lightweight workspace index. It stores shared agent rule configuration and local workspace rules, and intentionally avoids tracking the actual project repositories.
+1. Install dependencies:
+   ```bash
+   npm install
+   ```
+2. Make your changes in `src/`.
+3. Add or update tests in `tests/`.
+4. Verify your changes:
+   ```bash
+   npm run verify
+   ```
 
-## Workflow
+## Coding standards
 
-- Create a branch (optional) or work on `main`.
-- Update or add rule files as needed.
-- Regenerate `AGENTS.md` by running:
-  - `compose-agentsmd`
-- Commit with a clear message and open a PR if desired.
+- Follow the existing code style (enforced by Prettier and ESLint).
+- Ensure all tests pass.
+- Write clear, concise commit messages.
 
-## Development commands
+## Submitting changes
 
-- `compose-agentsmd`
-
-## Testing
-
-There are no runtime tests. The CI workflow verifies that `AGENTS.md` is up to date by running `compose-agentsmd` and checking for diffs.
+- Open a Pull Request with a clear description of your changes.
+- Ensure the CI workflow passes.
