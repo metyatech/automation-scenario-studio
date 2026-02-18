@@ -19,5 +19,6 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
 
 ### Added
 
-- Initial public workspace setup.
-- Local ghws workspace rules and AGENTS.md composition.
+- Initial public release of automation-scenario-studio.
+- CLI for running Robot Framework suites from automation-scenario-spec v2.
+- Support for web and unity targets.

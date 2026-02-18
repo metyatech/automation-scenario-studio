@@ -67,6 +67,16 @@ npm run verify
 
 - Node.js 20+
 
+## Release
+
+This package is published to npm under the `@metyatech` scope.
+
+1. Ensure all changes are documented in `CHANGELOG.md`.
+2. Bump the version in `package.json`.
+3. Run `npm run verify`.
+4. Create a Git tag and push to GitHub.
+5. A GitHub Release will be created, and the package will be published via CI.
+
 ## Links
 
 - LICENSE: `LICENSE`
