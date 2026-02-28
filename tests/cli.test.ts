@@ -18,7 +18,7 @@ describe("cli argument parsing", () => {
       "--var",
       "unity_window_hint=Unity",
       "--var",
-      "menu_path=Tools/Build",
+      "menu_path=Tools/Build"
     ]);
 
     expect(parsed).toEqual({
@@ -29,8 +29,8 @@ describe("cli argument parsing", () => {
       profile: "docs",
       variables: {
         unity_window_hint: "Unity",
-        menu_path: "Tools/Build",
-      },
+        menu_path: "Tools/Build"
+      }
     });
   });
 
@@ -39,8 +39,6 @@ describe("cli argument parsing", () => {
   });
 
   it("rejects malformed variable values", () => {
-    expect(() => parseVariableArg("menu_path")).toThrow(
-      "Invalid --var value: menu_path",
-    );
+    expect(() => parseVariableArg("menu_path")).toThrow("Invalid --var value: menu_path");
   });
 });

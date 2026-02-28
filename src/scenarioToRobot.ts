@@ -2,7 +2,7 @@ import type {
   AutomationScenario,
   ScenarioStep,
   ScenarioStepAction,
-  ScenarioStepControl,
+  ScenarioStepControl
 } from "./scenarioSpec.js";
 
 const WEB_ACTIONS = new Set([
@@ -18,7 +18,7 @@ const WEB_ACTIONS = new Set([
   "screenshot",
   "start_video",
   "stop_video",
-  "emit_annotation",
+  "emit_annotation"
 ]);
 
 const UNITY_ACTIONS = new Set([
@@ -35,7 +35,7 @@ const UNITY_ACTIONS = new Set([
   "screenshot",
   "start_video",
   "stop_video",
-  "emit_annotation",
+  "emit_annotation"
 ]);
 
 type ControlSignal = "none" | "break" | "continue" | "return";
@@ -44,9 +44,7 @@ type ExpansionFrame = {
   signal: ControlSignal;
 };
 
-export function generateRobotSuiteFromScenario(
-  scenario: AutomationScenario,
-): string {
+export function generateRobotSuiteFromScenario(scenario: AutomationScenario): string {
   if (scenario.target === "web") {
     return generateWebRobotSuite(scenario);
   }
@@ -60,12 +58,8 @@ export function generateRobotSuiteFromScenario(
 function generateWebRobotSuite(scenario: AutomationScenario): string {
   const startUrl = toRobotCell(readStartUrl(scenario));
   const browser = toRobotCell(readBrowser(scenario));
-  const screenshotEnabled = readScreenshotOutputEnabled(scenario)
-    ? "${TRUE}"
-    : "${FALSE}";
-  const stepLines = flattenSteps(scenario.steps).flatMap((step) =>
-    toWebStepLines(step),
-  );
+  const screenshotEnabled = readScreenshotOutputEnabled(scenario) ? "${TRUE}" : "${FALSE}";
+  const stepLines = flattenSteps(scenario.steps).flatMap((step) => toWebStepLines(step));
 
   return [
     "*** Settings ***",
@@ -90,7 +84,7 @@ function generateWebRobotSuite(scenario: AutomationScenario): string {
     "",
     ...commonKeywordLines(),
     ...webKeywordLines(),
-    "",
+    ""
   ].join("\n");
 }
 
@@ -98,12 +92,8 @@ function generateUnityRobotSuite(scenario: AutomationScenario): string {
   const unityMode = normalizeUnityMode(readUnityExecutionMode(scenario));
   const unityProjectPath = toRobotOptionalCell(readUnityProjectPath(scenario));
   const unityWindowHint = toRobotCell(readUnityWindowHint(scenario));
-  const screenshotEnabled = readScreenshotOutputEnabled(scenario)
-    ? "${TRUE}"
-    : "${FALSE}";
-  const stepLines = flattenSteps(scenario.steps).flatMap((step) =>
-    toUnityStepLines(step),
-  );
+  const screenshotEnabled = readScreenshotOutputEnabled(scenario) ? "${TRUE}" : "${FALSE}";
+  const stepLines = flattenSteps(scenario.steps).flatMap((step) => toUnityStepLines(step));
 
   return [
     "*** Settings ***",
@@ -136,7 +126,7 @@ function generateUnityRobotSuite(scenario: AutomationScenario): string {
     "",
     ...commonKeywordLines(),
     ...unityKeywordLines(),
-    "",
+    ""
   ].join("\n");
 }
 
@@ -150,7 +140,7 @@ function expandSteps(
   steps: ScenarioStep[],
   parentTitles: string[],
   values: Record<string, unknown>,
-  frame: ExpansionFrame,
+  frame: ExpansionFrame
 ): ScenarioStepAction[] {
   const output: ScenarioStepAction[] = [];
 
@@ -165,8 +155,8 @@ function expandSteps(
           step.steps,
           [...parentTitles, interpolateString(step.title, values)],
           values,
-          frame,
-        ),
+          frame
+        )
       );
       continue;
     }
@@ -185,20 +175,16 @@ function expandSteps(
 function resolveActionStep(
   step: ScenarioStepAction,
   parentTitles: string[],
-  values: Record<string, unknown>,
+  values: Record<string, unknown>
 ): ScenarioStepAction {
   const resolved = resolveTemplate(step, values) as ScenarioStepAction;
-  const titlePrefix =
-    parentTitles.length > 0 ? `${parentTitles.join(" > ")} > ` : "";
+  const titlePrefix = parentTitles.length > 0 ? `${parentTitles.join(" > ")} > ` : "";
   return {
     ...resolved,
     id: sanitizeDynamicStepId(String(resolved.id ?? step.id)),
     title: `${titlePrefix}${String(resolved.title ?? step.title)}`,
-    description:
-      typeof resolved.description === "string"
-        ? resolved.description
-        : undefined,
-    action: String(resolved.action ?? step.action),
+    description: typeof resolved.description === "string" ? resolved.description : undefined,
+    action: String(resolved.action ?? step.action)
   };
 }
 
@@ -206,7 +192,7 @@ function expandControlStep(
   step: ScenarioStepControl,
   parentTitles: string[],
   values: Record<string, unknown>,
-  frame: ExpansionFrame,
+  frame: ExpansionFrame
 ): ScenarioStepAction[] {
   const output: ScenarioStepAction[] = [];
 
@@ -238,7 +224,7 @@ function expandControlStep(
         [itemVariable]: item,
         [`${itemVariable}_index`]: index,
         item,
-        index,
+        index
       };
       output.push(...expandSteps(nested, parentTitles, loopValues, frame));
       if (frame.signal === "return") {
@@ -258,8 +244,7 @@ function expandControlStep(
   if (step.control === "while") {
     const nested = step.steps ?? [];
     const maxIterations =
-      typeof step.max_iterations === "number" &&
-      Number.isInteger(step.max_iterations)
+      typeof step.max_iterations === "number" && Number.isInteger(step.max_iterations)
         ? Math.max(1, step.max_iterations)
         : 50;
 
@@ -270,7 +255,7 @@ function expandControlStep(
       }
       const loopValues = {
         ...values,
-        loop_index: iterations,
+        loop_index: iterations
       };
       output.push(...expandSteps(nested, parentTitles, loopValues, frame));
       iterations += 1;
@@ -294,9 +279,7 @@ function expandControlStep(
       output.push(...expandSteps(step.steps, parentTitles, values, frame));
     }
     if (step.finally_steps) {
-      output.push(
-        ...expandSteps(step.finally_steps, parentTitles, values, frame),
-      );
+      output.push(...expandSteps(step.finally_steps, parentTitles, values, frame));
     }
     return output;
   }
@@ -328,7 +311,7 @@ function expandControlStep(
 
 function evaluateItemsExpression(
   expression: string | undefined,
-  values: Record<string, unknown>,
+  values: Record<string, unknown>
 ): unknown[] {
   if (!expression || expression.trim() === "") {
     return [];
@@ -366,7 +349,7 @@ function evaluateItemsExpression(
 }
 function evaluateControlExpression(
   expression: string | undefined,
-  values: Record<string, unknown>,
+  values: Record<string, unknown>
 ): boolean {
   if (!expression) {
     return false;
@@ -379,9 +362,7 @@ function evaluateControlExpression(
     return !evaluateControlExpression(normalized.slice(1), values);
   }
 
-  const operatorMatch = normalized.match(
-    /^(.*?)\s+(==|!=|>=|<=|>|<|in|contains)\s+(.*?)$/,
-  );
+  const operatorMatch = normalized.match(/^(.*?)\s+(==|!=|>=|<=|>|<|in|contains)\s+(.*?)$/);
   if (!operatorMatch) {
     return isTruthy(resolveExpressionValue(normalized, values));
   }
@@ -430,10 +411,7 @@ function evaluateControlExpression(
   return false;
 }
 
-function resolveExpressionValue(
-  raw: string,
-  values: Record<string, unknown>,
-): unknown {
+function resolveExpressionValue(raw: string, values: Record<string, unknown>): unknown {
   const token = raw.trim();
   if (token === "") {
     return "";
@@ -559,12 +537,12 @@ function dedupeStepIds(steps: ScenarioStepAction[]): ScenarioStepAction[] {
     if (next === 1) {
       return {
         ...step,
-        id: baseId,
+        id: baseId
       };
     }
     return {
       ...step,
-      id: `${baseId}-${next}`,
+      id: `${baseId}-${next}`
     };
   });
 }
@@ -587,49 +565,39 @@ function toWebStepLines(step: ScenarioStepAction): string[] {
   if (step.action === "open_url") {
     const url = requiredStringFromInput(step, "url");
     return withStaticAnnotations(
-      [
-        `        Doc Web Step    ${id}    ${title}    ${description}    Go To    ${url}`,
-      ],
-      step,
+      [`        Doc Web Step    ${id}    ${title}    ${description}    Go To    ${url}`],
+      step
     );
   }
   if (step.action === "click") {
     const locator = resolveWebLocator(step.target);
     return withStaticAnnotations(
-      [
-        `        Doc Web Click Step    ${id}    ${title}    ${description}    ${locator}`,
-      ],
-      step,
+      [`        Doc Web Click Step    ${id}    ${title}    ${description}    ${locator}`],
+      step
     );
   }
   if (step.action === "double_click") {
     const locator = resolveWebLocator(step.target);
     return withStaticAnnotations(
-      [
-        `        Doc Web Double Click Step    ${id}    ${title}    ${description}    ${locator}`,
-      ],
-      step,
+      [`        Doc Web Double Click Step    ${id}    ${title}    ${description}    ${locator}`],
+      step
     );
   }
   if (step.action === "right_click") {
     const locator = resolveWebLocator(step.target);
     return withStaticAnnotations(
-      [
-        `        Doc Web Context Click Step    ${id}    ${title}    ${description}    ${locator}`,
-      ],
-      step,
+      [`        Doc Web Context Click Step    ${id}    ${title}    ${description}    ${locator}`],
+      step
     );
   }
   if (step.action === "drag_drop") {
-    const sourceLocator = resolveWebLocator(
-      readNestedTarget(step.input, "source"),
-    );
+    const sourceLocator = resolveWebLocator(readNestedTarget(step.input, "source"));
     const targetLocator = resolveWebLocator(step.target);
     return withStaticAnnotations(
       [
-        `        Doc Web Drag Step    ${id}    ${title}    ${description}    ${sourceLocator}    ${targetLocator}`,
+        `        Doc Web Drag Step    ${id}    ${title}    ${description}    ${sourceLocator}    ${targetLocator}`
       ],
-      step,
+      step
     );
   }
   if (step.action === "type_text") {
@@ -637,9 +605,9 @@ function toWebStepLines(step: ScenarioStepAction): string[] {
     const text = requiredStringFromInput(step, "text");
     return withStaticAnnotations(
       [
-        `        Doc Web Step    ${id}    ${title}    ${description}    Input Text    ${locator}    ${text}`,
+        `        Doc Web Step    ${id}    ${title}    ${description}    Input Text    ${locator}    ${text}`
       ],
-      step,
+      step
     );
   }
   if (step.action === "wait_for") {
@@ -648,28 +616,24 @@ function toWebStepLines(step: ScenarioStepAction): string[] {
       const timeoutSeconds = readTimingNumber(step, "timeout_seconds", 10);
       return withStaticAnnotations(
         [
-          `        Doc Web Step    ${id}    ${title}    ${description}    Wait Until Element Is Visible    ${locator}    ${timeoutSeconds}s`,
+          `        Doc Web Step    ${id}    ${title}    ${description}    Wait Until Element Is Visible    ${locator}    ${timeoutSeconds}s`
         ],
-        step,
+        step
       );
     }
 
     const seconds = numberFromInput(step, "seconds", 1);
     return withStaticAnnotations(
-      [
-        `        Doc Web Step    ${id}    ${title}    ${description}    Sleep    ${seconds}`,
-      ],
-      step,
+      [`        Doc Web Step    ${id}    ${title}    ${description}    Sleep    ${seconds}`],
+      step
     );
   }
   if (step.action === "assert") {
     if (step.target) {
       const locator = resolveWebLocator(step.target);
       return withStaticAnnotations(
-        [
-          `        Doc Web Assert Step    ${id}    ${title}    ${description}    ${locator}`,
-        ],
-        step,
+        [`        Doc Web Assert Step    ${id}    ${title}    ${description}    ${locator}`],
+        step
       );
     }
 
@@ -677,9 +641,9 @@ function toWebStepLines(step: ScenarioStepAction): string[] {
     if (text !== "") {
       return withStaticAnnotations(
         [
-          `        Doc Web Step    ${id}    ${title}    ${description}    Page Should Contain    ${toRobotCell(text)}`,
+          `        Doc Web Step    ${id}    ${title}    ${description}    Page Should Contain    ${toRobotCell(text)}`
         ],
-        step,
+        step
       );
     }
 
@@ -691,9 +655,9 @@ function toWebStepLines(step: ScenarioStepAction): string[] {
     const value = toRobotCell(shortcut || keys || "{ENTER}");
     return withStaticAnnotations(
       [
-        `        Doc Web Step    ${id}    ${title}    ${description}    Press Keys    NONE    ${value}`,
+        `        Doc Web Step    ${id}    ${title}    ${description}    Press Keys    NONE    ${value}`
       ],
-      step,
+      step
     );
   }
   if (
@@ -703,10 +667,8 @@ function toWebStepLines(step: ScenarioStepAction): string[] {
     step.action === "emit_annotation"
   ) {
     return withStaticAnnotations(
-      [
-        `        Doc Web Step    ${id}    ${title}    ${description}    No Operation`,
-      ],
-      step,
+      [`        Doc Web Step    ${id}    ${title}    ${description}    No Operation`],
+      step
     );
   }
 
@@ -719,15 +681,11 @@ function toUnityStepLines(step: ScenarioStepAction): string[] {
   const title = toRobotCell(step.title);
   const description = toRobotOptionalCell(step.description ?? "");
 
-  if (
-    step.action === "click" ||
-    step.action === "double_click" ||
-    step.action === "right_click"
-  ) {
+  if (step.action === "click" || step.action === "double_click" || step.action === "right_click") {
     const candidate = selectTargetCandidate(
       step.target,
       new Set(["unity_hierarchy", "uia", "coordinate"]),
-      `${step.action} target`,
+      `${step.action} target`
     );
     const strategy = readTargetStrategy(candidate);
 
@@ -738,9 +696,9 @@ function toUnityStepLines(step: ScenarioStepAction): string[] {
           `        \${annotation}=    Wait Until Keyword Succeeds    45 sec    1 sec    Select Unity Hierarchy Object    hierarchy_path=${path}    timeout_seconds=4.0`,
           `        Wait For Seconds    ${waitSecondsFromTiming(step, 0.0)}`,
           `        Save Step Screenshot    ${id}`,
-          "        Emit Annotation Metadata    ${annotation}",
+          "        Emit Annotation Metadata    ${annotation}"
         ],
-        step,
+        step
       );
     }
 
@@ -748,20 +706,14 @@ function toUnityStepLines(step: ScenarioStepAction): string[] {
       const selectorArgs = unitySelectorArgsFromCandidate(candidate);
       const lines: string[] = [];
       if (step.action === "right_click") {
-        lines.push(
-          `        \${annotation}=    Click Unity Element${selectorArgs}    button=right`,
-        );
+        lines.push(`        \${annotation}=    Click Unity Element${selectorArgs}    button=right`);
       } else {
-        lines.push(
-          `        \${annotation}=    Click Unity Element${selectorArgs}`,
-        );
+        lines.push(`        \${annotation}=    Click Unity Element${selectorArgs}`);
         if (step.action === "double_click") {
           lines.push(`        Click Unity Element${selectorArgs}`);
         }
       }
-      lines.push(
-        `        Wait For Seconds    ${waitSecondsFromTiming(step, 0.0)}`,
-      );
+      lines.push(`        Wait For Seconds    ${waitSecondsFromTiming(step, 0.0)}`);
       lines.push(`        Save Step Screenshot    ${id}`);
       lines.push("        Emit Annotation Metadata    ${annotation}");
       return withStaticAnnotations(lines, step);
@@ -777,9 +729,9 @@ function toUnityStepLines(step: ScenarioStepAction): string[] {
 
     return withStaticAnnotations(
       [
-        `        Doc Desktop Step    ${id}    ${title}    ${description}    ${keyword}    ${coordinate.xRatio}    ${coordinate.yRatio}    180    48    ${waitSecondsFromTiming(step, 0.8)}`,
+        `        Doc Desktop Step    ${id}    ${title}    ${description}    ${keyword}    ${coordinate.xRatio}    ${coordinate.yRatio}    180    48    ${waitSecondsFromTiming(step, 0.8)}`
       ],
-      step,
+      step
     );
   }
 
@@ -787,12 +739,12 @@ function toUnityStepLines(step: ScenarioStepAction): string[] {
     const source = selectTargetCandidate(
       readNestedTarget(step.input, "source"),
       new Set(["uia", "coordinate"]),
-      "drag_drop source",
+      "drag_drop source"
     );
     const target = selectTargetCandidate(
       step.target,
       new Set(["uia", "coordinate"]),
-      "drag_drop target",
+      "drag_drop target"
     );
     const sourceStrategy = readTargetStrategy(source);
     const targetStrategy = readTargetStrategy(target);
@@ -805,9 +757,9 @@ function toUnityStepLines(step: ScenarioStepAction): string[] {
           `        \${annotation}=    Drag Unity Element To Element${sourceArgs}${targetArgs}`,
           `        Wait For Seconds    ${waitSecondsFromTiming(step, 0.0)}`,
           `        Save Step Screenshot    ${id}`,
-          "        Emit Annotation Metadata    ${annotation}",
+          "        Emit Annotation Metadata    ${annotation}"
         ],
-        step,
+        step
       );
     }
 
@@ -816,14 +768,14 @@ function toUnityStepLines(step: ScenarioStepAction): string[] {
       const targetCoordinate = requiredCoordinateFromCandidate(target);
       return withStaticAnnotations(
         [
-          `        Doc Desktop Step    ${id}    ${title}    ${description}    Unity Drag Relative And Emit    ${sourceCoordinate.xRatio}    ${sourceCoordinate.yRatio}    ${targetCoordinate.xRatio}    ${targetCoordinate.yRatio}    ${waitSecondsFromTiming(step, 0.8)}`,
+          `        Doc Desktop Step    ${id}    ${title}    ${description}    Unity Drag Relative And Emit    ${sourceCoordinate.xRatio}    ${sourceCoordinate.yRatio}    ${targetCoordinate.xRatio}    ${targetCoordinate.yRatio}    ${waitSecondsFromTiming(step, 0.8)}`
         ],
-        step,
+        step
       );
     }
 
     throw new Error(
-      `Unsupported unity drag_drop selector strategy pair: ${sourceStrategy} -> ${targetStrategy}`,
+      `Unsupported unity drag_drop selector strategy pair: ${sourceStrategy} -> ${targetStrategy}`
     );
   }
 
@@ -831,9 +783,9 @@ function toUnityStepLines(step: ScenarioStepAction): string[] {
     const text = requiredStringFromInput(step, "text");
     return withStaticAnnotations(
       [
-        `        Doc Desktop Step    ${id}    ${title}    ${description}    Type Unity Text    ${text}`,
+        `        Doc Desktop Step    ${id}    ${title}    ${description}    Type Unity Text    ${text}`
       ],
-      step,
+      step
     );
   }
   if (step.action === "wait_for") {
@@ -841,7 +793,7 @@ function toUnityStepLines(step: ScenarioStepAction): string[] {
       const candidate = selectTargetCandidate(
         step.target,
         new Set(["uia", "unity_hierarchy"]),
-        "wait_for target",
+        "wait_for target"
       );
       if (readTargetStrategy(candidate) === "uia") {
         const selectorArgs = unitySelectorArgsFromCandidate(candidate);
@@ -849,9 +801,9 @@ function toUnityStepLines(step: ScenarioStepAction): string[] {
         return withStaticAnnotations(
           [
             `        Wait For Unity Element${selectorArgs}    timeout_seconds=${timeoutSeconds}`,
-            `        Save Step Screenshot    ${id}`,
+            `        Save Step Screenshot    ${id}`
           ],
-          step,
+          step
         );
       }
       const path = readUnityHierarchyPathFromCandidate(candidate);
@@ -859,25 +811,25 @@ function toUnityStepLines(step: ScenarioStepAction): string[] {
         [
           `        \${annotation}=    Wait Until Keyword Succeeds    45 sec    1 sec    Select Unity Hierarchy Object    hierarchy_path=${path}    timeout_seconds=4.0`,
           `        Save Step Screenshot    ${id}`,
-          "        Emit Annotation Metadata    ${annotation}",
+          "        Emit Annotation Metadata    ${annotation}"
         ],
-        step,
+        step
       );
     }
 
     const seconds = numberFromInput(step, "seconds", 1);
     return withStaticAnnotations(
       [
-        `        Doc Desktop Step    ${id}    ${title}    ${description}    Wait For Seconds    ${seconds}`,
+        `        Doc Desktop Step    ${id}    ${title}    ${description}    Wait For Seconds    ${seconds}`
       ],
-      step,
+      step
     );
   }
   if (step.action === "assert") {
     const candidate = selectTargetCandidate(
       step.target,
       new Set(["uia", "unity_hierarchy"]),
-      "assert target",
+      "assert target"
     );
     if (readTargetStrategy(candidate) === "uia") {
       const selectorArgs = unitySelectorArgsFromCandidate(candidate);
@@ -885,9 +837,9 @@ function toUnityStepLines(step: ScenarioStepAction): string[] {
       return withStaticAnnotations(
         [
           `        Wait For Unity Element${selectorArgs}    timeout_seconds=${timeoutSeconds}`,
-          `        Save Step Screenshot    ${id}`,
+          `        Save Step Screenshot    ${id}`
         ],
-        step,
+        step
       );
     }
 
@@ -896,9 +848,9 @@ function toUnityStepLines(step: ScenarioStepAction): string[] {
       [
         "        ${selected_hierarchy}=    Get Unity Selected Hierarchy Path",
         `        Should Be Equal As Strings    \${selected_hierarchy}    ${expectedPath}`,
-        `        Save Step Screenshot    ${id}`,
+        `        Save Step Screenshot    ${id}`
       ],
-      step,
+      step
     );
   }
   if (step.action === "press_keys") {
@@ -906,50 +858,47 @@ function toUnityStepLines(step: ScenarioStepAction): string[] {
     if (shortcut !== "") {
       return withStaticAnnotations(
         [
-          `        Doc Desktop Step    ${id}    ${title}    ${description}    Send Unity Shortcut    ${toRobotCell(shortcut)}`,
+          `        Doc Desktop Step    ${id}    ${title}    ${description}    Send Unity Shortcut    ${toRobotCell(shortcut)}`
         ],
-        step,
+        step
       );
     }
     const keys = readStringFromInput(step, "keys");
     return withStaticAnnotations(
       [
-        `        Doc Desktop Step    ${id}    ${title}    ${description}    Press Unity Keys    ${toRobotCell(keys || "{ENTER}")}`,
+        `        Doc Desktop Step    ${id}    ${title}    ${description}    Press Unity Keys    ${toRobotCell(keys || "{ENTER}")}`
       ],
-      step,
+      step
     );
   }
   if (step.action === "open_menu") {
-    const menuPathCandidates = readStringListFromInput(
-      step,
-      "menu_path_candidates",
-    ).map((candidate) => toRobotCell(candidate));
+    const menuPathCandidates = readStringListFromInput(step, "menu_path_candidates").map(
+      (candidate) => toRobotCell(candidate)
+    );
     if (menuPathCandidates.length > 0) {
       return withStaticAnnotations(
         [
-          `        Doc Desktop Step    ${id}    ${title}    ${description}    Open Unity Top Menu With Fallbacks    ${menuPathCandidates.join("    ")}`,
+          `        Doc Desktop Step    ${id}    ${title}    ${description}    Open Unity Top Menu With Fallbacks    ${menuPathCandidates.join("    ")}`
         ],
-        step,
+        step
       );
     }
 
     const menuPath = requiredStringFromInput(step, "menu_path");
     return withStaticAnnotations(
       [
-        `        Doc Desktop Step    ${id}    ${title}    ${description}    Open Unity Top Menu    ${menuPath}`,
+        `        Doc Desktop Step    ${id}    ${title}    ${description}    Open Unity Top Menu    ${menuPath}`
       ],
-      step,
+      step
     );
   }
   if (step.action === "select_hierarchy") {
     const candidates = selectTargetCandidates(
       step.target,
       new Set(["unity_hierarchy"]),
-      "select_hierarchy target",
+      "select_hierarchy target"
     );
-    const paths = candidates.map((candidate) =>
-      readUnityHierarchyPathFromCandidate(candidate),
-    );
+    const paths = candidates.map((candidate) => readUnityHierarchyPathFromCandidate(candidate));
     const keyword =
       paths.length > 1
         ? `Select Unity Hierarchy Object With Fallbacks    ${paths.join("    ")}`
@@ -959,9 +908,9 @@ function toUnityStepLines(step: ScenarioStepAction): string[] {
       [
         `        \${annotation}=    Wait Until Keyword Succeeds    45 sec    1 sec    ${keyword}`,
         `        Save Step Screenshot    ${id}`,
-        "        Emit Annotation Metadata    ${annotation}",
+        "        Emit Annotation Metadata    ${annotation}"
       ],
-      step,
+      step
     );
   }
   if (
@@ -971,20 +920,15 @@ function toUnityStepLines(step: ScenarioStepAction): string[] {
     step.action === "emit_annotation"
   ) {
     return withStaticAnnotations(
-      [
-        `        Doc Desktop Step    ${id}    ${title}    ${description}    No Operation`,
-      ],
-      step,
+      [`        Doc Desktop Step    ${id}    ${title}    ${description}    No Operation`],
+      step
     );
   }
 
   throw new Error(`Unsupported unity action: ${step.action}`);
 }
 
-function withStaticAnnotations(
-  lines: string[],
-  step: ScenarioStepAction,
-): string[] {
+function withStaticAnnotations(lines: string[], step: ScenarioStepAction): string[] {
   const annotationLines = staticAnnotationLines(step);
   if (annotationLines.length === 0) {
     return lines;
@@ -996,13 +940,10 @@ function staticAnnotationLines(step: ScenarioStepAction): string[] {
   if (!step.annotations || step.annotations.length === 0) {
     return [];
   }
-  const payload = JSON.stringify(step.annotations).replaceAll(
-    "'''",
-    "\\u0027\\u0027\\u0027",
-  );
+  const payload = JSON.stringify(step.annotations).replaceAll("'''", "\\u0027\\u0027\\u0027");
   return [
     `        \${annotations}=    Evaluate    json.loads(r'''${payload}''')    modules=json`,
-    "        Emit Annotation List Metadata    ${annotations}",
+    "        Emit Annotation List Metadata    ${annotations}"
   ];
 }
 
@@ -1048,7 +989,7 @@ function commonKeywordLines(): string[] {
     "    IF    '${normalized}' == ''",
     "        Fail    unity_project_path is required when unity_execution_mode is launch.",
     "    END",
-    "",
+    ""
   ];
 }
 function webKeywordLines(): string[] {
@@ -1116,7 +1057,7 @@ function webKeywordLines(): string[] {
     "    ${box}=    Execute JavaScript    const locator = arguments[0]; let el = null; if (locator.startsWith('css:')) { el = document.querySelector(locator.slice(4)); } else if (locator.startsWith('xpath:')) { const result = document.evaluate(locator.slice(6), document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null); el = result.singleNodeValue; } else { el = document.querySelector(locator); } if (!el) { return null; } const rect = el.getBoundingClientRect(); const sx = window.screenX ?? window.screenLeft ?? 0; const sy = window.screenY ?? window.screenTop ?? 0; const viewportX = sx + Math.max(0, (window.outerWidth - window.innerWidth) / 2); const viewportY = sy + Math.max(0, window.outerHeight - window.innerHeight); return [Math.round(viewportX + rect.left), Math.round(viewportY + rect.top), Math.round(rect.width), Math.round(rect.height), Math.round(viewportX + rect.left + rect.width / 2), Math.round(viewportY + rect.top + rect.height / 2)];    ARGUMENTS    ${locator}",
     "    Should Not Be Equal    ${box}    ${None}",
     "    RETURN    ${box}",
-    "",
+    ""
   ];
 }
 
@@ -1169,18 +1110,18 @@ function unityKeywordLines(): string[] {
     "    ${annotation}=    Drag Unity Relative    ${from_x_ratio}    ${from_y_ratio}    ${to_x_ratio}    ${to_y_ratio}",
     "    Wait For Seconds    ${wait_seconds}",
     "    Emit Annotation Metadata    ${annotation}",
-    "",
+    ""
   ];
 }
 
 function ensureActionSupported(
   step: ScenarioStepAction,
   allowed: Set<string>,
-  target: "web" | "unity",
+  target: "web" | "unity"
 ): void {
   if (!allowed.has(step.action)) {
     throw new Error(
-      `Unsupported action "${step.action}" for target "${target}" at step "${step.id}".`,
+      `Unsupported action "${step.action}" for target "${target}" at step "${step.id}".`
     );
   }
 }
@@ -1233,9 +1174,7 @@ function readUnityProjectPath(scenario: AutomationScenario): string {
 function readUnityWindowHint(scenario: AutomationScenario): string {
   const attach = readExecutionObject(scenario, "attach");
   const variableId =
-    attach && typeof attach.window_hint_var === "string"
-      ? attach.window_hint_var
-      : "";
+    attach && typeof attach.window_hint_var === "string" ? attach.window_hint_var : "";
   if (variableId) {
     const fromVariable = readVariableDefault(scenario, variableId);
     if (fromVariable) {
@@ -1265,10 +1204,7 @@ function readScreenshotOutputEnabled(scenario: AutomationScenario): boolean {
   return true;
 }
 
-function readVariableDefault(
-  scenario: AutomationScenario,
-  variableId: string,
-): string {
+function readVariableDefault(scenario: AutomationScenario, variableId: string): string {
   for (const variable of scenario.variables) {
     if (variable.id !== variableId) {
       continue;
@@ -1286,10 +1222,7 @@ function readMetadataString(scenario: AutomationScenario, key: string): string {
   return typeof value === "string" ? value : "";
 }
 
-function readExecutionString(
-  scenario: AutomationScenario,
-  key: string,
-): string {
+function readExecutionString(scenario: AutomationScenario, key: string): string {
   if (!scenario.execution || typeof scenario.execution !== "object") {
     return "";
   }
@@ -1299,7 +1232,7 @@ function readExecutionString(
 
 function readExecutionObject(
   scenario: AutomationScenario,
-  key: string,
+  key: string
 ): Record<string, unknown> | undefined {
   if (!scenario.execution || typeof scenario.execution !== "object") {
     return undefined;
@@ -1311,10 +1244,7 @@ function readExecutionObject(
   return value as Record<string, unknown>;
 }
 
-function requiredStringFromInput(
-  step: ScenarioStepAction,
-  key: string,
-): string {
+function requiredStringFromInput(step: ScenarioStepAction, key: string): string {
   const value = readStringFromInput(step, key);
   if (value === "") {
     throw new Error(`Step "${step.id}" requires input.${key}.`);
@@ -1333,10 +1263,7 @@ function readStringFromInput(step: ScenarioStepAction, key: string): string {
   return value;
 }
 
-function readStringListFromInput(
-  step: ScenarioStepAction,
-  key: string,
-): string[] {
+function readStringListFromInput(step: ScenarioStepAction, key: string): string[] {
   if (!step.input || typeof step.input !== "object") {
     return [];
   }
@@ -1349,11 +1276,7 @@ function readStringListFromInput(
     .filter((item) => item !== "");
 }
 
-function numberFromInput(
-  step: ScenarioStepAction,
-  key: string,
-  fallback: number,
-): string {
+function numberFromInput(step: ScenarioStepAction, key: string, fallback: number): string {
   if (!step.input || typeof step.input !== "object") {
     return `${fallback}`;
   }
@@ -1370,11 +1293,7 @@ function numberFromInput(
   return `${fallback}`;
 }
 
-function readTimingNumber(
-  step: ScenarioStepAction,
-  key: string,
-  fallback: number,
-): number {
+function readTimingNumber(step: ScenarioStepAction, key: string, fallback: number): number {
   if (!step.timing || typeof step.timing !== "object") {
     return fallback;
   }
@@ -1391,10 +1310,7 @@ function readTimingNumber(
   return fallback;
 }
 
-function waitSecondsFromTiming(
-  step: ScenarioStepAction,
-  fallback: number,
-): string {
+function waitSecondsFromTiming(step: ScenarioStepAction, fallback: number): string {
   if (!step.timing || typeof step.timing !== "object") {
     return `${fallback}`;
   }
@@ -1408,7 +1324,7 @@ function waitSecondsFromTiming(
 function collectTargetCandidates(
   target: unknown,
   output: Array<Record<string, unknown>>,
-  visited: Set<Record<string, unknown>>,
+  visited: Set<Record<string, unknown>>
 ): void {
   if (!target || typeof target !== "object") {
     return;
@@ -1432,7 +1348,7 @@ function collectTargetCandidates(
 function selectTargetCandidate(
   target: unknown,
   allowedStrategies: Set<string>,
-  context: string,
+  context: string
 ): Record<string, unknown> {
   const matches = selectTargetCandidates(target, allowedStrategies, context);
   return matches[0];
@@ -1441,14 +1357,10 @@ function selectTargetCandidate(
 function selectTargetCandidates(
   target: unknown,
   allowedStrategies: Set<string>,
-  context: string,
+  context: string
 ): Array<Record<string, unknown>> {
   const candidates: Array<Record<string, unknown>> = [];
-  collectTargetCandidates(
-    target,
-    candidates,
-    new Set<Record<string, unknown>>(),
-  );
+  collectTargetCandidates(target, candidates, new Set<Record<string, unknown>>());
 
   const matches = candidates.filter((candidate) => {
     try {
@@ -1472,7 +1384,7 @@ function selectTargetCandidates(
     })
     .join(", ");
   throw new Error(
-    `No compatible selector for ${context}. allowed=${Array.from(allowedStrategies).join(",")}, seen=${seenStrategies || "none"}`,
+    `No compatible selector for ${context}. allowed=${Array.from(allowedStrategies).join(",")}, seen=${seenStrategies || "none"}`
   );
 }
 
@@ -1499,9 +1411,7 @@ function resolveWebLocator(target: unknown): string {
   const text = typeof selector.text === "string" ? selector.text.trim() : "";
 
   if (text !== "" && role === "" && name === "") {
-    return toRobotCell(
-      `xpath://*[contains(normalize-space(.), ${escapeXpathLiteral(text)})]`,
-    );
+    return toRobotCell(`xpath://*[contains(normalize-space(.), ${escapeXpathLiteral(text)})]`);
   }
 
   if (role !== "" || name !== "" || text !== "") {
@@ -1511,14 +1421,10 @@ function resolveWebLocator(target: unknown): string {
     }
     if (name !== "") {
       const escapedName = escapeXpathLiteral(name);
-      predicates.push(
-        `(@aria-label=${escapedName} or normalize-space(.)=${escapedName})`,
-      );
+      predicates.push(`(@aria-label=${escapedName} or normalize-space(.)=${escapedName})`);
     }
     if (text !== "") {
-      predicates.push(
-        `contains(normalize-space(.), ${escapeXpathLiteral(text)})`,
-      );
+      predicates.push(`contains(normalize-space(.), ${escapeXpathLiteral(text)})`);
     }
     return toRobotCell(`xpath://*[${predicates.join(" and ")}]`);
   }
@@ -1547,7 +1453,7 @@ function escapeXpathLiteral(value: string): string {
 
 function readNestedTarget(
   input: Record<string, unknown> | undefined,
-  key: string,
+  key: string
 ): Record<string, unknown> {
   if (!input || typeof input !== "object") {
     throw new Error(`input.${key} is required.`);
@@ -1570,10 +1476,7 @@ function readTargetStrategy(target: unknown): string {
   return strategy;
 }
 
-function unitySelectorArgsFromCandidate(
-  candidate: Record<string, unknown>,
-  prefix = "",
-): string {
+function unitySelectorArgsFromCandidate(candidate: Record<string, unknown>, prefix = ""): string {
   if (readTargetStrategy(candidate) !== "uia") {
     throw new Error("uia target strategy required.");
   }
@@ -1583,13 +1486,7 @@ function unitySelectorArgsFromCandidate(
   }
   const selector = uia as Record<string, unknown>;
   const parts: string[] = [];
-  for (const key of [
-    "title",
-    "automation_id",
-    "class_name",
-    "control_type",
-    "index",
-  ]) {
+  for (const key of ["title", "automation_id", "class_name", "control_type", "index"]) {
     const value = selector[key];
     if (value === undefined || value === null) {
       continue;
@@ -1606,9 +1503,7 @@ function unitySelectorArgsFromCandidate(
   return `    ${parts.join("    ")}`;
 }
 
-function readUnityHierarchyPathFromCandidate(
-  candidate: Record<string, unknown>,
-): string {
+function readUnityHierarchyPathFromCandidate(candidate: Record<string, unknown>): string {
   if (readTargetStrategy(candidate) !== "unity_hierarchy") {
     throw new Error("unity_hierarchy strategy is required.");
   }
@@ -1659,10 +1554,7 @@ function toRobotOptionalCell(value: string): string {
   return normalized === "" ? "${EMPTY}" : normalized;
 }
 
-function interpolateString(
-  text: string,
-  values: Record<string, unknown>,
-): string {
+function interpolateString(text: string, values: Record<string, unknown>): string {
   return text.replaceAll(/\$\{([a-zA-Z_][a-zA-Z0-9_.-]*)\}/g, (_, key) => {
     const value = getPathValue(values, key);
     if (value === undefined || value === null) {
@@ -1684,9 +1576,7 @@ function resolveTemplate<T>(input: T, values: Record<string, unknown>): T {
   }
   if (input && typeof input === "object") {
     const output: Record<string, unknown> = {};
-    for (const [key, value] of Object.entries(
-      input as Record<string, unknown>,
-    )) {
+    for (const [key, value] of Object.entries(input as Record<string, unknown>)) {
       output[key] = resolveTemplate(value, values);
     }
     return output as T;
