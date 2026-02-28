@@ -6,14 +6,9 @@ import { fileURLToPath } from "node:url";
 import {
   annotateImage,
   annotateVideo,
-  renderMarkdownFromArtifacts,
+  renderMarkdownFromArtifacts
 } from "@metyatech/automation-scenario-renderer";
-import type {
-  AnnotationSpec,
-  RunArtifacts,
-  StepArtifact,
-  VideoTimelineEvent,
-} from "./types.js";
+import type { AnnotationSpec, RunArtifacts, StepArtifact, VideoTimelineEvent } from "./types.js";
 import { loadScenarioFile } from "./scenarioSpec.js";
 import { generateRobotSuiteFromScenario } from "./scenarioToRobot.js";
 
@@ -38,9 +33,7 @@ export type RunScenarioCommandOptions = {
   variables?: Record<string, unknown>;
 };
 
-export async function runScenarioCommand(
-  options: RunScenarioCommandOptions,
-): Promise<{
+export async function runScenarioCommand(options: RunScenarioCommandOptions): Promise<{
   scenarioId: string;
   steps: number;
   videoPath: string | null;
@@ -49,44 +42,30 @@ export async function runScenarioCommand(
   const scenarioPath = resolve(options.scenarioPath);
   const scenario = await loadScenarioFile(scenarioPath, {
     profile: options.profile,
-    variables: options.variables,
+    variables: options.variables
   });
-  const outputDir = resolve(
-    options.outputDir ?? join("artifacts", scenario.scenario_id),
-  );
+  const outputDir = resolve(options.outputDir ?? join("artifacts", scenario.scenario_id));
   const generatedSuiteDir = join(outputDir, "generated");
-  const generatedSuitePath = join(
-    generatedSuiteDir,
-    `${scenario.scenario_id}.robot`,
-  );
+  const generatedSuitePath = join(generatedSuiteDir, `${scenario.scenario_id}.robot`);
 
   await mkdir(generatedSuiteDir, { recursive: true });
-  await writeFile(
-    generatedSuitePath,
-    generateRobotSuiteFromScenario(scenario),
-    "utf8",
-  );
+  await writeFile(generatedSuitePath, generateRobotSuiteFromScenario(scenario), "utf8");
 
   return runRobotCommand({
     suitePath: generatedSuitePath,
     outputDir,
     markdownPath: options.markdownPath,
-    recordVideo: options.recordVideo,
+    recordVideo: options.recordVideo
   });
 }
 
-export async function runRobotCommand(
-  options: RunRobotCommandOptions,
-): Promise<{
+export async function runRobotCommand(options: RunRobotCommandOptions): Promise<{
   scenarioId: string;
   steps: number;
   videoPath: string | null;
   outputDir: string;
 }> {
-  const runId = new Date()
-    .toISOString()
-    .replaceAll(":", "-")
-    .replaceAll(".", "-");
+  const runId = new Date().toISOString().replaceAll(":", "-").replaceAll(".", "-");
   const outputDir = resolve(options.outputDir ?? join("artifacts", runId));
   const suitePath = resolve(options.suitePath);
 
@@ -99,9 +78,7 @@ export async function runRobotCommand(
 
   const recordVideo = options.recordVideo ?? true;
   const rawVideoPath = join(videoDir, `${parse(suitePath).name}-raw.mp4`);
-  const recording = recordVideo
-    ? startScreenRecording(rawVideoPath)
-    : undefined;
+  const recording = recordVideo ? startScreenRecording(rawVideoPath) : undefined;
 
   try {
     await runCommand("python", buildRobotCommandArgs(robotDir, suitePath));
@@ -117,7 +94,7 @@ export async function runRobotCommand(
     "..",
     "..",
     "python",
-    "robot_output_to_artifacts.py",
+    "robot_output_to_artifacts.py"
   );
 
   const converterArgs = buildConverterCommandArgs({
@@ -126,14 +103,14 @@ export async function runRobotCommand(
     outputDir,
     artifactsPath,
     suiteId: parse(suitePath).name,
-    videoPath: recordVideo ? rawVideoPath : undefined,
+    videoPath: recordVideo ? rawVideoPath : undefined
   });
 
   await runCommand("python", converterArgs);
 
-  const artifacts = JSON.parse(
-    await readFile(artifactsPath, "utf8"),
-  ) as RunArtifacts & { annotationsApplied?: boolean };
+  const artifacts = JSON.parse(await readFile(artifactsPath, "utf8")) as RunArtifacts & {
+    annotationsApplied?: boolean;
+  };
 
   if (!artifacts.annotationsApplied) {
     await annotateStepImages(artifacts.steps);
@@ -141,19 +118,16 @@ export async function runRobotCommand(
   }
 
   const markdownPath = resolve(
-    options.markdownPath ?? join(outputDir, `${artifacts.scenarioId}.md`),
+    options.markdownPath ?? join(outputDir, `${artifacts.scenarioId}.md`)
   );
 
-  await renderMarkdownFromArtifacts(
-    toRendererRunArtifacts(artifacts),
-    markdownPath,
-  );
+  await renderMarkdownFromArtifacts(toRendererRunArtifacts(artifacts), markdownPath);
 
   return {
     scenarioId: artifacts.scenarioId,
     steps: artifacts.steps.length,
     videoPath: artifacts.videoPath ?? null,
-    outputDir,
+    outputDir
   };
 }
 
@@ -176,7 +150,7 @@ async function annotateStepImages(steps: StepArtifact[]): Promise<void> {
 
 async function annotateStepVideo(
   artifacts: RunArtifacts,
-  outputDir: string,
+  outputDir: string
 ): Promise<string | undefined> {
   if (!artifacts.rawVideoPath) {
     return artifacts.videoPath;
@@ -188,11 +162,7 @@ async function annotateStepVideo(
     return artifacts.videoPath ?? artifacts.rawVideoPath;
   }
 
-  const annotatedPath = join(
-    outputDir,
-    "video",
-    `${artifacts.scenarioId}-annotated.mp4`,
-  );
+  const annotatedPath = join(outputDir, "video", `${artifacts.scenarioId}-annotated.mp4`);
   await annotateVideo(artifacts.rawVideoPath, annotatedPath, rendererEvents);
   return annotatedPath;
 }
@@ -222,7 +192,7 @@ export function toTimelineEvents(steps: StepArtifact[]): VideoTimelineEvent[] {
 function toTimelineEvent(
   step: StepArtifact,
   annotation: AnnotationSpec,
-  runStartMs: number,
+  runStartMs: number
 ): VideoTimelineEvent | undefined {
   if (
     !isDrawableAnnotation(annotation) ||
@@ -234,7 +204,7 @@ function toTimelineEvent(
 
   const startSeconds = toSeconds(step.startedAtMs - runStartMs);
   const endSeconds = toSeconds(
-    Math.max(step.endedAtMs - runStartMs, step.startedAtMs - runStartMs + 1000),
+    Math.max(step.endedAtMs - runStartMs, step.startedAtMs - runStartMs + 1000)
   );
 
   if (
@@ -246,7 +216,7 @@ function toTimelineEvent(
       type: annotation.type,
       startSeconds,
       endSeconds,
-      box: annotation.box,
+      box: annotation.box
     };
   }
 
@@ -256,7 +226,7 @@ function toTimelineEvent(
       startSeconds,
       endSeconds,
       from: annotation.from,
-      to: annotation.to,
+      to: annotation.to
     };
   }
 
@@ -267,25 +237,17 @@ function toTimelineEvent(
       endSeconds,
       text: annotation.text,
       point: annotation.point,
-      box: annotation.box,
+      box: annotation.box
     };
   }
 
   return undefined;
 }
 
-export function isDrawableAnnotation(
-  annotation: AnnotationSpec | undefined,
-): annotation is Extract<
+export function isDrawableAnnotation(annotation: AnnotationSpec | undefined): annotation is Extract<
   AnnotationSpec,
   {
-    type:
-      | "click"
-      | "click_pulse"
-      | "highlight_box"
-      | "dragDrop"
-      | "drag_arrow"
-      | "label";
+    type: "click" | "click_pulse" | "highlight_box" | "dragDrop" | "drag_arrow" | "label";
   }
 > {
   if (!annotation) {
@@ -335,15 +297,9 @@ function toRendererAnnotation(
   annotation: Extract<
     AnnotationSpec,
     {
-      type:
-        | "click"
-        | "click_pulse"
-        | "highlight_box"
-        | "dragDrop"
-        | "drag_arrow"
-        | "label";
+      type: "click" | "click_pulse" | "highlight_box" | "dragDrop" | "drag_arrow" | "label";
     }
-  >,
+  >
 ): RendererAnnotationSpec | undefined {
   if (
     annotation.type === "click" ||
@@ -352,7 +308,7 @@ function toRendererAnnotation(
   ) {
     return {
       type: annotation.type,
-      box: annotation.box,
+      box: annotation.box
     };
   }
 
@@ -360,7 +316,7 @@ function toRendererAnnotation(
     return {
       type: "dragDrop",
       from: annotation.from,
-      to: annotation.to,
+      to: annotation.to
     };
   }
 
@@ -369,36 +325,28 @@ function toRendererAnnotation(
       type: "label",
       text: annotation.text,
       point: annotation.point,
-      box: annotation.box,
+      box: annotation.box
     };
   }
 
   return undefined;
 }
 
-function toRendererTimelineEvents(
-  events: VideoTimelineEvent[],
-): RendererVideoTimelineEvent[] {
+function toRendererTimelineEvents(events: VideoTimelineEvent[]): RendererVideoTimelineEvent[] {
   return events
     .map((event) => toRendererTimelineEvent(event))
-    .filter(
-      (event): event is RendererVideoTimelineEvent => event !== undefined,
-    );
+    .filter((event): event is RendererVideoTimelineEvent => event !== undefined);
 }
 
 function toRendererTimelineEvent(
-  event: VideoTimelineEvent,
+  event: VideoTimelineEvent
 ): RendererVideoTimelineEvent | undefined {
-  if (
-    event.type === "click" ||
-    event.type === "click_pulse" ||
-    event.type === "highlight_box"
-  ) {
+  if (event.type === "click" || event.type === "click_pulse" || event.type === "highlight_box") {
     return {
       type: event.type,
       startSeconds: event.startSeconds,
       endSeconds: event.endSeconds,
-      box: event.box,
+      box: event.box
     };
   }
 
@@ -408,7 +356,7 @@ function toRendererTimelineEvent(
       startSeconds: event.startSeconds,
       endSeconds: event.endSeconds,
       from: event.from,
-      to: event.to,
+      to: event.to
     };
   }
 
@@ -419,7 +367,7 @@ function toRendererTimelineEvent(
       endSeconds: event.endSeconds,
       text: event.text,
       point: event.point,
-      box: event.box,
+      box: event.box
     };
   }
 
@@ -432,7 +380,7 @@ function toRendererRunArtifacts(artifacts: RunArtifacts): RendererRunArtifacts {
     title: artifacts.title,
     steps: artifacts.steps.map((step) => toRendererStepArtifact(step)),
     videoPath: artifacts.videoPath,
-    rawVideoPath: artifacts.rawVideoPath,
+    rawVideoPath: artifacts.rawVideoPath
   };
 }
 
@@ -440,7 +388,7 @@ function toRendererStepArtifact(step: StepArtifact): RendererStepArtifact {
   const rendererStep: RendererStepArtifact = {
     id: step.id,
     title: step.title,
-    imagePath: step.imagePath,
+    imagePath: step.imagePath
   };
 
   if (step.description) {
@@ -454,7 +402,7 @@ function toRendererStepArtifact(step: StepArtifact): RendererStepArtifact {
   }
 
   const firstDrawable = stepAnnotations(step).find((annotation) =>
-    isDrawableAnnotation(annotation),
+    isDrawableAnnotation(annotation)
   );
   if (firstDrawable) {
     const rendererAnnotation = toRendererAnnotation(firstDrawable);
@@ -522,18 +470,15 @@ function startScreenRecording(outputPath: string): ChildProcess {
       "scale=trunc(iw/2)*2:trunc(ih/2)*2",
       "-preset",
       "ultrafast",
-      outputPath,
+      outputPath
     ],
     {
-      stdio: ["pipe", "ignore", "ignore"],
-    },
+      stdio: ["pipe", "ignore", "ignore"]
+    }
   );
 }
 
-export function buildRobotCommandArgs(
-  robotDir: string,
-  suitePath: string,
-): string[] {
+export function buildRobotCommandArgs(robotDir: string, suitePath: string): string[] {
   return [
     "-m",
     "robot",
@@ -545,7 +490,7 @@ export function buildRobotCommandArgs(
     "NONE",
     "--report",
     "NONE",
-    suitePath,
+    suitePath
   ];
 }
 
@@ -566,7 +511,7 @@ export function buildConverterCommandArgs(options: {
     "--artifacts-json",
     options.artifactsPath,
     "--suite-id",
-    options.suiteId,
+    options.suiteId
   ];
 
   if (options.videoPath) {
@@ -605,11 +550,7 @@ function waitForExit(child: ChildProcess, errorPrefix?: string): Promise<void> {
       if (code === 0) {
         resolve();
       } else {
-        reject(
-          new Error(
-            `${errorPrefix ?? "process failed"} (exit=${code ?? "unknown"})`,
-          ),
-        );
+        reject(new Error(`${errorPrefix ?? "process failed"} (exit=${code ?? "unknown"})`));
       }
     });
   });

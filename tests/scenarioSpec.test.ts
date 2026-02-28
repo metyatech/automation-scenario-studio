@@ -4,7 +4,7 @@ import {
   applyScenarioVariables,
   normalizeScenario,
   validateScenario,
-  type AutomationScenario,
+  type AutomationScenario
 } from "../src/scenarioSpec.js";
 
 describe("scenario spec variable resolution", () => {
@@ -16,18 +16,18 @@ describe("scenario spec variable resolution", () => {
         name: "V2 Example",
         target: "unity",
         metadata: {
-          target_window_hint: "${window_hint}",
+          target_window_hint: "${window_hint}"
         },
         variables: [
           { id: "window_hint", type: "string", default: "Unity" },
-          { id: "menu_path", type: "string", required: true },
+          { id: "menu_path", type: "string", required: true }
         ],
         profiles: {
           default: {
             variables: {
-              menu_path: "Tools/Build",
-            },
-          },
+              menu_path: "Tools/Build"
+            }
+          }
         },
         steps: [
           {
@@ -36,12 +36,12 @@ describe("scenario spec variable resolution", () => {
             kind: "action",
             action: "open_menu",
             input: {
-              menu_path: "${menu_path}",
-            },
-          },
-        ],
+              menu_path: "${menu_path}"
+            }
+          }
+        ]
       },
-      "D:/tmp/v2.scenario.json",
+      "D:/tmp/v2.scenario.json"
     );
 
     validateScenario(scenario);
@@ -49,16 +49,16 @@ describe("scenario spec variable resolution", () => {
     const resolved = applyScenarioVariables(scenario, {
       profile: "default",
       variables: {
-        window_hint: "Unity Editor",
-      },
+        window_hint: "Unity Editor"
+      }
     });
 
     expect(resolved.metadata.target_window_hint).toBe("Unity Editor");
     expect(resolved.steps[0]).toMatchObject({
       title: "Open Tools/Build",
       input: {
-        menu_path: "Tools/Build",
-      },
+        menu_path: "Tools/Build"
+      }
     });
   });
 
@@ -78,16 +78,16 @@ describe("scenario spec variable resolution", () => {
             kind: "action",
             action: "open_menu",
             input: {
-              menu_path: "${menu_path}",
-            },
-          },
-        ],
+              menu_path: "${menu_path}"
+            }
+          }
+        ]
       },
-      "D:/tmp/required-var.scenario.json",
+      "D:/tmp/required-var.scenario.json"
     );
 
     expect(() => applyScenarioVariables(scenario)).toThrow(
-      "required variable is not resolved: menu_path",
+      "required variable is not resolved: menu_path"
     );
   });
 
@@ -115,10 +115,10 @@ describe("scenario spec variable resolution", () => {
                 kind: "action",
                 action: "open_menu",
                 input: {
-                  menu_path: "Tools/${part}",
-                },
-              },
-            ],
+                  menu_path: "Tools/${part}"
+                }
+              }
+            ]
           },
           {
             id: "if-example",
@@ -135,16 +135,16 @@ describe("scenario spec variable resolution", () => {
                     kind: "action",
                     action: "wait_for",
                     input: {
-                      seconds: 0.1,
-                    },
-                  },
-                ],
-              },
-            ],
-          },
-        ],
+                      seconds: 0.1
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        ]
       },
-      "D:/tmp/control-normalize.scenario.json",
+      "D:/tmp/control-normalize.scenario.json"
     );
 
     validateScenario(scenario);
@@ -153,7 +153,7 @@ describe("scenario spec variable resolution", () => {
     expect(controlStep).toMatchObject({
       control: "for_each",
       item_variable: "part",
-      items_expression: '["Ear_L","Ear_R"]',
+      items_expression: '["Ear_L","Ear_R"]'
     });
   });
 });

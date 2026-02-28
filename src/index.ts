@@ -6,6 +6,6 @@ export {
   applyScenarioVariables,
   loadScenarioFile,
   normalizeScenario,
-  validateScenario,
+  validateScenario
 } from "./scenarioSpec.js";
 export { generateRobotSuiteFromScenario } from "./scenarioToRobot.js";

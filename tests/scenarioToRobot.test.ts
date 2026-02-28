@@ -11,10 +11,10 @@ describe("scenario spec", () => {
         {
           name: "legacy",
           target: "unity",
-          steps: [],
+          steps: []
         },
-        "D:/tmp/legacy.json",
-      ),
+        "D:/tmp/legacy.json"
+      )
     ).toThrow("schema_version is required");
   });
 });
@@ -28,7 +28,7 @@ describe("scenario to robot", () => {
       target: "web",
       metadata: {
         start_url: "https://example.com",
-        browser: "chrome",
+        browser: "chrome"
       },
       variables: [],
       steps: [
@@ -39,8 +39,8 @@ describe("scenario to robot", () => {
           kind: "action",
           action: "open_url",
           input: {
-            url: "https://example.com",
-          },
+            url: "https://example.com"
+          }
         },
         {
           id: "click-link",
@@ -50,11 +50,11 @@ describe("scenario to robot", () => {
           target: {
             strategy: "web",
             web: {
-              css: "a",
-            },
-          },
-        },
-      ],
+              css: "a"
+            }
+          }
+        }
+      ]
     };
 
     const suite = generateRobotSuiteFromScenario(scenario);
@@ -72,17 +72,17 @@ describe("scenario to robot", () => {
       name: "Unity Example",
       target: "unity",
       metadata: {
-        target_window_hint: "Unity",
+        target_window_hint: "Unity"
       },
       execution: {
-        mode: "launch",
+        mode: "launch"
       },
       variables: [
         {
           id: "unity_project_path",
           type: "path",
-          default: "D:/projects/sample",
-        },
+          default: "D:/projects/sample"
+        }
       ],
       steps: [
         {
@@ -99,11 +99,11 @@ describe("scenario to robot", () => {
                 strategy: "uia",
                 uia: {
                   title: "Scene",
-                  control_type: "Pane",
-                },
-              },
-            },
-          ],
+                  control_type: "Pane"
+                }
+              }
+            }
+          ]
         },
         {
           id: "save",
@@ -111,23 +111,19 @@ describe("scenario to robot", () => {
           kind: "action",
           action: "press_keys",
           input: {
-            shortcut: "CTRL+S",
-          },
-        },
-      ],
+            shortcut: "CTRL+S"
+          }
+        }
+      ]
     };
 
     const suite = generateRobotSuiteFromScenario(scenario);
 
-    expect(suite).toContain(
-      "Library    robotframework_unity_editor.UnityEditorLibrary",
-    );
-    expect(suite).toContain(
-      "Start Unity Editor    project_path=${unity_project_path}",
-    );
+    expect(suite).toContain("Library    robotframework_unity_editor.UnityEditorLibrary");
+    expect(suite).toContain("Start Unity Editor    project_path=${unity_project_path}");
     expect(suite).toContain("${annotation}=    Click Unity Element");
     expect(suite).toContain(
-      "Doc Desktop Step    save    Save    ${EMPTY}    Send Unity Shortcut    CTRL+S",
+      "Doc Desktop Step    save    Save    ${EMPTY}    Send Unity Shortcut    CTRL+S"
     );
   });
 
@@ -141,8 +137,8 @@ describe("scenario to robot", () => {
       variables: [],
       outputs: {
         screenshots: {
-          enabled: true,
-        },
+          enabled: true
+        }
       },
       steps: [
         {
@@ -159,18 +155,18 @@ describe("scenario to robot", () => {
               kind: "action",
               action: "open_menu",
               input: {
-                menu_path: "Tools/${part}",
+                menu_path: "Tools/${part}"
               },
               annotations: [
                 {
                   type: "label",
-                  text: "${part}",
-                },
-              ],
-            },
-          ],
-        },
-      ],
+                  text: "${part}"
+                }
+              ]
+            }
+          ]
+        }
+      ]
     };
 
     const suite = generateRobotSuiteFromScenario(scenario);
@@ -187,7 +183,7 @@ describe("scenario to robot", () => {
       target: "web",
       metadata: {
         start_url: "https://example.com",
-        browser: "chrome",
+        browser: "chrome"
       },
       variables: [],
       steps: [
@@ -199,19 +195,19 @@ describe("scenario to robot", () => {
           target: {
             strategy: "image",
             image: {
-              path: "missing.png",
+              path: "missing.png"
             },
             fallbacks: [
               {
                 strategy: "web",
                 web: {
-                  css: "a.more",
-                },
-              },
-            ],
-          },
-        },
-      ],
+                  css: "a.more"
+                }
+              }
+            ]
+          }
+        }
+      ]
     };
 
     const suite = generateRobotSuiteFromScenario(scenario);
@@ -236,11 +232,11 @@ describe("scenario to robot", () => {
           input: {
             menu_path_candidates: [
               "VRChat SDK/Show Control Panel",
-              "VRChat SDK/Utilities/Show Control Panel",
-            ],
-          },
-        },
-      ],
+              "VRChat SDK/Utilities/Show Control Panel"
+            ]
+          }
+        }
+      ]
     };
 
     const suite = generateRobotSuiteFromScenario(scenario);
@@ -266,19 +262,19 @@ describe("scenario to robot", () => {
           target: {
             strategy: "unity_hierarchy",
             unity_hierarchy: {
-              path: "AvatarRoot",
+              path: "AvatarRoot"
             },
             fallbacks: [
               {
                 strategy: "unity_hierarchy",
                 unity_hierarchy: {
-                  path: "Body/AvatarRoot",
-                },
-              },
-            ],
-          },
-        },
-      ],
+                  path: "Body/AvatarRoot"
+                }
+              }
+            ]
+          }
+        }
+      ]
     };
 
     const suite = generateRobotSuiteFromScenario(scenario);

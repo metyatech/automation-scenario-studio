@@ -5,7 +5,7 @@ import {
   buildConverterCommandArgs,
   buildRobotCommandArgs,
   isDrawableAnnotation,
-  toTimelineEvents,
+  toTimelineEvents
 } from "../src/robotRunner.js";
 
 describe("robot runner command builders", () => {
@@ -23,7 +23,7 @@ describe("robot runner command builders", () => {
       "NONE",
       "--report",
       "NONE",
-      "D:/suite/web.robot",
+      "D:/suite/web.robot"
     ]);
   });
 
@@ -34,7 +34,7 @@ describe("robot runner command builders", () => {
       outputDir: "D:/out",
       artifactsPath: "D:/out/steps.json",
       suiteId: "web-example",
-      videoPath: "D:/out/video/raw.mp4",
+      videoPath: "D:/out/video/raw.mp4"
     });
 
     const withoutVideo = buildConverterCommandArgs({
@@ -42,7 +42,7 @@ describe("robot runner command builders", () => {
       outputXmlPath: "D:/out/robot/output.xml",
       outputDir: "D:/out",
       artifactsPath: "D:/out/steps.json",
-      suiteId: "web-example",
+      suiteId: "web-example"
     });
 
     expect(withVideo).toContain("--video-path");
@@ -59,11 +59,11 @@ describe("robot runner command builders", () => {
         annotations: [
           {
             type: "highlight_box",
-            box: { x: 10, y: 20, width: 100, height: 30 },
-          },
+            box: { x: 10, y: 20, width: 100, height: 30 }
+          }
         ],
         startedAtMs: 2_000,
-        endedAtMs: 2_200,
+        endedAtMs: 2_200
       },
       {
         id: "drag",
@@ -73,12 +73,12 @@ describe("robot runner command builders", () => {
           {
             type: "drag_arrow",
             from: { x: 100, y: 150 },
-            to: { x: 300, y: 350 },
-          },
+            to: { x: 300, y: 350 }
+          }
         ],
         startedAtMs: 3_000,
-        endedAtMs: 3_800,
-      },
+        endedAtMs: 3_800
+      }
     ];
 
     const events = toTimelineEvents(steps);
@@ -86,11 +86,11 @@ describe("robot runner command builders", () => {
     expect(events).toHaveLength(2);
     expect(events[0]).toMatchObject({
       type: "highlight_box",
-      startSeconds: 0,
+      startSeconds: 0
     });
     expect(events[1]).toMatchObject({
       type: "drag_arrow",
-      startSeconds: 1,
+      startSeconds: 1
     });
   });
 
@@ -98,22 +98,22 @@ describe("robot runner command builders", () => {
     expect(
       isDrawableAnnotation({
         type: "highlight_box",
-        box: { x: 1, y: 2, width: 3, height: 4 },
-      }),
+        box: { x: 1, y: 2, width: 3, height: 4 }
+      })
     ).toBe(true);
     expect(
       isDrawableAnnotation({
         type: "drag_arrow",
         from: { x: 1, y: 2 },
-        to: { x: 3, y: 4 },
-      }),
+        to: { x: 3, y: 4 }
+      })
     ).toBe(true);
     expect(
       isDrawableAnnotation({
         type: "label",
         text: "Step 1",
-        point: { x: 10, y: 20 },
-      }),
+        point: { x: 10, y: 20 }
+      })
     ).toBe(true);
     expect(isDrawableAnnotation(undefined)).toBe(false);
   });

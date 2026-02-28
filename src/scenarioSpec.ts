@@ -61,10 +61,7 @@ export type ScenarioStepGroup = {
   [key: string]: unknown;
 };
 
-export type ScenarioStep =
-  | ScenarioStepAction
-  | ScenarioStepControl
-  | ScenarioStepGroup;
+export type ScenarioStep = ScenarioStepAction | ScenarioStepControl | ScenarioStepGroup;
 
 export type AutomationScenario = {
   schema_version: "2.0.0";
@@ -77,10 +74,7 @@ export type AutomationScenario = {
   tags?: string[];
   metadata: Record<string, unknown>;
   variables: ScenarioVariable[];
-  profiles?: Record<
-    string,
-    { variables?: Record<string, unknown>; [key: string]: unknown }
-  >;
+  profiles?: Record<string, { variables?: Record<string, unknown>; [key: string]: unknown }>;
   execution?: Record<string, unknown>;
   recording?: Record<string, unknown>;
   outputs?: Record<string, unknown>;
@@ -124,16 +118,12 @@ function normalizeTarget(input: unknown): ScenarioTarget {
   throw new Error(`Unsupported target: ${targetRaw}`);
 }
 
-function normalizeActionStep(
-  step: Record<string, unknown>,
-  index: number,
-): ScenarioStepAction {
+function normalizeActionStep(step: Record<string, unknown>, index: number): ScenarioStepAction {
   const actionRaw = String(step.action ?? "wait_for").trim() || "wait_for";
   return {
     id: sanitizeStepId(String(step.id ?? `step-${index + 1}`)),
     title: String(step.title ?? actionRaw),
-    description:
-      typeof step.description === "string" ? step.description : undefined,
+    description: typeof step.description === "string" ? step.description : undefined,
     kind: "action",
     action: actionRaw,
     target:
@@ -162,23 +152,19 @@ function normalizeActionStep(
         : undefined,
     annotations: Array.isArray(step.annotations)
       ? (step.annotations as Array<Record<string, unknown>>)
-      : undefined,
+      : undefined
   };
 }
 
-function normalizeBranch(
-  branch: Record<string, unknown>,
-  index: number,
-): ScenarioControlBranch {
+function normalizeBranch(branch: Record<string, unknown>, index: number): ScenarioControlBranch {
   const branchSteps = Array.isArray(branch.steps) ? branch.steps : [];
   return {
     when: String(branch.when ?? (index === 0 ? "true" : "false")).trim(),
     steps: branchSteps
       .filter(
-        (child): child is Record<string, unknown> =>
-          Boolean(child) && typeof child === "object",
+        (child): child is Record<string, unknown> => Boolean(child) && typeof child === "object"
       )
-      .map((child, childIndex) => normalizeStep(child, childIndex)),
+      .map((child, childIndex) => normalizeStep(child, childIndex))
   };
 }
 
@@ -186,70 +172,54 @@ function normalizeNestedSteps(input: unknown): ScenarioStep[] {
   const nested = Array.isArray(input) ? input : [];
   return nested
     .filter(
-      (child): child is Record<string, unknown> =>
-        Boolean(child) && typeof child === "object",
+      (child): child is Record<string, unknown> => Boolean(child) && typeof child === "object"
     )
     .map((child, childIndex) => normalizeStep(child, childIndex));
 }
 
-function normalizeControlStep(
-  step: Record<string, unknown>,
-  index: number,
-): ScenarioStepControl {
+function normalizeControlStep(step: Record<string, unknown>, index: number): ScenarioStepControl {
   return {
     id: sanitizeStepId(String(step.id ?? `control-${index + 1}`)),
     title: String(step.title ?? `control-${index + 1}`),
-    description:
-      typeof step.description === "string" ? step.description : undefined,
+    description: typeof step.description === "string" ? step.description : undefined,
     kind: "control",
     control: String(step.control ?? "").trim(),
-    expression:
-      typeof step.expression === "string" ? step.expression : undefined,
-    items_expression:
-      typeof step.items_expression === "string"
-        ? step.items_expression
-        : undefined,
-    item_variable:
-      typeof step.item_variable === "string" ? step.item_variable : undefined,
+    expression: typeof step.expression === "string" ? step.expression : undefined,
+    items_expression: typeof step.items_expression === "string" ? step.items_expression : undefined,
+    item_variable: typeof step.item_variable === "string" ? step.item_variable : undefined,
     max_iterations:
-      typeof step.max_iterations === "number" &&
-      Number.isInteger(step.max_iterations)
+      typeof step.max_iterations === "number" && Number.isInteger(step.max_iterations)
         ? step.max_iterations
         : undefined,
     branches: Array.isArray(step.branches)
       ? step.branches
           .filter(
             (branch): branch is Record<string, unknown> =>
-              Boolean(branch) && typeof branch === "object",
+              Boolean(branch) && typeof branch === "object"
           )
           .map((branch, branchIndex) => normalizeBranch(branch, branchIndex))
       : undefined,
     steps: normalizeNestedSteps(step.steps),
     catch_steps: normalizeNestedSteps(step.catch_steps),
-    finally_steps: normalizeNestedSteps(step.finally_steps),
+    finally_steps: normalizeNestedSteps(step.finally_steps)
   };
 }
 
-function normalizeStep(
-  step: Record<string, unknown>,
-  index: number,
-): ScenarioStep {
+function normalizeStep(step: Record<string, unknown>, index: number): ScenarioStep {
   const kind = String(step.kind ?? "action").toLowerCase();
   if (kind === "group") {
     const nested = Array.isArray(step.steps) ? step.steps : [];
     const normalizedNested = nested
       .filter(
-        (child): child is Record<string, unknown> =>
-          Boolean(child) && typeof child === "object",
+        (child): child is Record<string, unknown> => Boolean(child) && typeof child === "object"
       )
       .map((child, childIndex) => normalizeStep(child, childIndex));
     return {
       id: sanitizeStepId(String(step.id ?? `group-${index + 1}`)),
       title: String(step.title ?? `group-${index + 1}`),
-      description:
-        typeof step.description === "string" ? step.description : undefined,
+      description: typeof step.description === "string" ? step.description : undefined,
       kind: "group",
-      steps: normalizedNested,
+      steps: normalizedNested
     };
   }
 
@@ -262,17 +232,13 @@ function normalizeStep(
 
 export function normalizeScenario(
   input: Record<string, unknown>,
-  sourcePath: string,
+  sourcePath: string
 ): AutomationScenario {
   if (typeof input.schema_version !== "string") {
-    throw new Error(
-      `schema_version is required for scenario file: ${basename(sourcePath)}`,
-    );
+    throw new Error(`schema_version is required for scenario file: ${basename(sourcePath)}`);
   }
   if (input.schema_version !== "2.0.0") {
-    throw new Error(
-      `Unsupported schema_version: ${String(input.schema_version)}`,
-    );
+    throw new Error(`Unsupported schema_version: ${String(input.schema_version)}`);
   }
 
   const steps = Array.isArray(input.steps) ? input.steps : [];
@@ -281,20 +247,13 @@ export function normalizeScenario(
 
   return {
     schema_version: "2.0.0",
-    scenario_id: sanitizeId(
-      String(input.scenario_id ?? basename(sourcePath, ".scenario.json")),
-    ),
+    scenario_id: sanitizeId(String(input.scenario_id ?? basename(sourcePath, ".scenario.json"))),
     name: String(input.name ?? "Scenario"),
-    description:
-      typeof input.description === "string" ? input.description : undefined,
+    description: typeof input.description === "string" ? input.description : undefined,
     target,
-    created_at:
-      typeof input.created_at === "string" ? input.created_at : undefined,
-    updated_at:
-      typeof input.updated_at === "string" ? input.updated_at : undefined,
-    tags: Array.isArray(input.tags)
-      ? input.tags.map((tag) => String(tag))
-      : undefined,
+    created_at: typeof input.created_at === "string" ? input.created_at : undefined,
+    updated_at: typeof input.updated_at === "string" ? input.updated_at : undefined,
+    tags: Array.isArray(input.tags) ? input.tags.map((tag) => String(tag)) : undefined,
     metadata:
       input.metadata && typeof input.metadata === "object"
         ? (input.metadata as Record<string, unknown>)
@@ -302,22 +261,18 @@ export function normalizeScenario(
     variables: variables
       .filter(
         (variable): variable is Record<string, unknown> =>
-          Boolean(variable) && typeof variable === "object",
+          Boolean(variable) && typeof variable === "object"
       )
       .map((variable) => ({
         id: String(variable.id ?? ""),
         type: String(variable.type ?? "string"),
-        required:
-          typeof variable.required === "boolean" ? variable.required : false,
+        required: typeof variable.required === "boolean" ? variable.required : false,
         default: variable.default,
-        ...variable,
+        ...variable
       })),
     profiles:
       input.profiles && typeof input.profiles === "object"
-        ? (input.profiles as Record<
-            string,
-            { variables?: Record<string, unknown> }
-          >)
+        ? (input.profiles as Record<string, { variables?: Record<string, unknown> }>)
         : {},
     execution:
       input.execution && typeof input.execution === "object"
@@ -336,11 +291,8 @@ export function normalizeScenario(
         ? (input.extensions as Record<string, unknown>)
         : undefined,
     steps: steps
-      .filter(
-        (step): step is Record<string, unknown> =>
-          Boolean(step) && typeof step === "object",
-      )
-      .map((step, index) => normalizeStep(step, index)),
+      .filter((step): step is Record<string, unknown> => Boolean(step) && typeof step === "object")
+      .map((step, index) => normalizeStep(step, index))
   };
 }
 
@@ -417,9 +369,7 @@ function validateSteps(steps: ScenarioStep[]): void {
           !step.item_variable ||
           step.item_variable.trim() === ""
         ) {
-          throw new Error(
-            `for_each requires items_expression and item_variable: ${step.id}`,
-          );
+          throw new Error(`for_each requires items_expression and item_variable: ${step.id}`);
         }
       }
       if (step.control === "while") {
@@ -456,7 +406,7 @@ function readProfileExtends(profile: {
 
 function resolveProfileVariables(
   profileName: string,
-  profiles: Record<string, { variables?: Record<string, unknown> }> | undefined,
+  profiles: Record<string, { variables?: Record<string, unknown> }> | undefined
 ): Record<string, unknown> {
   if (!profiles || !profiles[profileName]) {
     throw new Error(`Profile not found: ${profileName}`);
@@ -490,7 +440,7 @@ function resolveProfileVariables(
 
 function resolveVariableValues(
   scenario: AutomationScenario,
-  options: LoadScenarioOptions | undefined,
+  options: LoadScenarioOptions | undefined
 ): Record<string, unknown> {
   const defaults: Record<string, unknown> = {};
   for (const variable of scenario.variables) {
@@ -501,10 +451,7 @@ function resolveVariableValues(
 
   const profileName = options?.profile?.trim();
   if (profileName) {
-    Object.assign(
-      defaults,
-      resolveProfileVariables(profileName, scenario.profiles),
-    );
+    Object.assign(defaults, resolveProfileVariables(profileName, scenario.profiles));
   }
 
   if (options?.variables) {
@@ -519,10 +466,7 @@ function resolveVariableValues(
   return defaults;
 }
 
-function interpolateString(
-  text: string,
-  values: Record<string, unknown>,
-): string {
+function interpolateString(text: string, values: Record<string, unknown>): string {
   return text.replaceAll(/\$\{([a-zA-Z_][a-zA-Z0-9_]*)\}/g, (_, key) => {
     if (!(key in values)) {
       return "";
@@ -547,9 +491,7 @@ function resolveValue<T>(value: T, values: Record<string, unknown>): T {
   }
   if (value && typeof value === "object") {
     const result: Record<string, unknown> = {};
-    for (const [key, child] of Object.entries(
-      value as Record<string, unknown>,
-    )) {
+    for (const [key, child] of Object.entries(value as Record<string, unknown>)) {
       result[key] = resolveValue(child, values);
     }
     return result as T;
@@ -557,31 +499,22 @@ function resolveValue<T>(value: T, values: Record<string, unknown>): T {
   return value;
 }
 
-function resolveSteps(
-  steps: ScenarioStep[],
-  values: Record<string, unknown>,
-): ScenarioStep[] {
+function resolveSteps(steps: ScenarioStep[], values: Record<string, unknown>): ScenarioStep[] {
   return steps.map((step) => {
     if (step.kind === "group") {
       return {
         ...step,
         title: interpolateString(step.title, values),
-        description: step.description
-          ? interpolateString(step.description, values)
-          : undefined,
-        steps: resolveSteps(step.steps, values),
+        description: step.description ? interpolateString(step.description, values) : undefined,
+        steps: resolveSteps(step.steps, values)
       };
     }
     if (step.kind === "control") {
       return {
         ...resolveValue(step, values),
         title: interpolateString(step.title, values),
-        description: step.description
-          ? interpolateString(step.description, values)
-          : undefined,
-        expression: step.expression
-          ? interpolateString(step.expression, values)
-          : undefined,
+        description: step.description ? interpolateString(step.description, values) : undefined,
+        expression: step.expression ? interpolateString(step.expression, values) : undefined,
         items_expression: step.items_expression
           ? interpolateString(step.items_expression, values)
           : undefined,
@@ -591,24 +524,18 @@ function resolveSteps(
         branches: step.branches
           ? step.branches.map((branch) => ({
               when: interpolateString(branch.when, values),
-              steps: resolveSteps(branch.steps, values),
+              steps: resolveSteps(branch.steps, values)
             }))
           : undefined,
         steps: step.steps ? resolveSteps(step.steps, values) : undefined,
-        catch_steps: step.catch_steps
-          ? resolveSteps(step.catch_steps, values)
-          : undefined,
-        finally_steps: step.finally_steps
-          ? resolveSteps(step.finally_steps, values)
-          : undefined,
+        catch_steps: step.catch_steps ? resolveSteps(step.catch_steps, values) : undefined,
+        finally_steps: step.finally_steps ? resolveSteps(step.finally_steps, values) : undefined
       };
     }
     return {
       ...step,
       title: interpolateString(step.title, values),
-      description: step.description
-        ? interpolateString(step.description, values)
-        : undefined,
+      description: step.description ? interpolateString(step.description, values) : undefined,
       action: interpolateString(step.action, values),
       target: step.target ? resolveValue(step.target, values) : undefined,
       input: step.input ? resolveValue(step.input, values) : undefined,
@@ -616,34 +543,29 @@ function resolveSteps(
       timing: step.timing ? resolveValue(step.timing, values) : undefined,
       retry: step.retry ? resolveValue(step.retry, values) : undefined,
       capture: step.capture ? resolveValue(step.capture, values) : undefined,
-      annotations: step.annotations
-        ? resolveValue(step.annotations, values)
-        : undefined,
+      annotations: step.annotations ? resolveValue(step.annotations, values) : undefined
     };
   });
 }
 
 export function applyScenarioVariables(
   scenario: AutomationScenario,
-  options?: LoadScenarioOptions,
+  options?: LoadScenarioOptions
 ): AutomationScenario {
   const values = resolveVariableValues(scenario, options);
   return {
     ...resolveValue(scenario, values),
     variables: scenario.variables,
     profiles: scenario.profiles,
-    steps: resolveSteps(scenario.steps, values),
+    steps: resolveSteps(scenario.steps, values)
   };
 }
 
 export async function loadScenarioFile(
   path: string,
-  options?: LoadScenarioOptions,
+  options?: LoadScenarioOptions
 ): Promise<AutomationScenario> {
-  const raw = JSON.parse(await readFile(path, "utf8")) as Record<
-    string,
-    unknown
-  >;
+  const raw = JSON.parse(await readFile(path, "utf8")) as Record<string, unknown>;
   const scenario = normalizeScenario(raw, path);
   validateScenario(scenario);
   return applyScenarioVariables(scenario, options);

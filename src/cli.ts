@@ -16,10 +16,7 @@ type ParsedArgs = {
 };
 
 function getVersion(): string {
-  const packageJsonPath = resolve(
-    fileURLToPath(import.meta.url),
-    "../../package.json",
-  );
+  const packageJsonPath = resolve(fileURLToPath(import.meta.url), "../../package.json");
   const packageJson = JSON.parse(readFileSync(packageJsonPath, "utf-8"));
   return packageJson.version;
 }
@@ -51,7 +48,7 @@ async function main(): Promise<void> {
       markdownPath: options.markdownPath,
       recordVideo: options.recordVideo,
       profile: options.profile,
-      variables: options.variables,
+      variables: options.variables
     });
     process.stdout.write(`${JSON.stringify(result)}\n`);
     return;
@@ -116,8 +113,8 @@ function printUsage(): void {
       "",
       "Examples:",
       "  automation-scenario run-scenario --scenario ./tests/example.json --output ./out",
-      "  automation-scenario run-scenario --scenario ./tests/example.json --profile ci --var env=prod",
-    ].join("\n") + "\n",
+      "  automation-scenario run-scenario --scenario ./tests/example.json --profile ci --var env=prod"
+    ].join("\n") + "\n"
   );
 }
 
@@ -158,9 +155,7 @@ function isCliEntryPoint(): boolean {
 
 if (isCliEntryPoint()) {
   void main().catch((error) => {
-    process.stderr.write(
-      `${error instanceof Error ? error.message : String(error)}\n`,
-    );
+    process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
     process.exit(1);
   });
 }
