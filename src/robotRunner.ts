@@ -27,6 +27,7 @@ export type RunRobotCommandOptions = {
   outputDir?: string;
   markdownPath?: string;
   recordVideo?: boolean;
+  assetBaseUrl?: string;
 };
 
 export type RunScenarioCommandOptions = {
@@ -36,6 +37,7 @@ export type RunScenarioCommandOptions = {
   recordVideo?: boolean;
   profile?: string;
   variables?: Record<string, unknown>;
+  assetBaseUrl?: string;
 };
 
 export async function runScenarioCommand(
@@ -72,6 +74,7 @@ export async function runScenarioCommand(
     outputDir,
     markdownPath: options.markdownPath,
     recordVideo: options.recordVideo,
+    assetBaseUrl: options.assetBaseUrl,
   });
 }
 
@@ -147,6 +150,9 @@ export async function runRobotCommand(
   await renderMarkdownFromArtifacts(
     toRendererRunArtifacts(artifacts),
     markdownPath,
+    options.assetBaseUrl
+      ? { assetBaseUrl: options.assetBaseUrl, outputDir }
+      : undefined,
   );
 
   return {

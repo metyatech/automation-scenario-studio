@@ -12,6 +12,7 @@ type ParsedArgs = {
   markdownPath?: string;
   recordVideo?: boolean;
   profile?: string;
+  assetBaseUrl?: string;
   variables: Record<string, string>;
 };
 
@@ -52,6 +53,7 @@ async function main(): Promise<void> {
       recordVideo: options.recordVideo,
       profile: options.profile,
       variables: options.variables,
+      assetBaseUrl: options.assetBaseUrl,
     });
     process.stdout.write(`${JSON.stringify(result)}\n`);
     return;
@@ -81,6 +83,9 @@ export function parseArgs(args: string[]): ParsedArgs {
       i += 1;
     } else if (arg === "--profile") {
       parsed.profile = args[i + 1];
+      i += 1;
+    } else if (arg === "--asset-base-url") {
+      parsed.assetBaseUrl = args[i + 1];
       i += 1;
     } else if (arg === "--var") {
       const [key, value] = parseVariableArg(args[i + 1]);
@@ -112,6 +117,7 @@ function printUsage(): void {
       "  --markdown <path>        Path for the markdown output",
       "  --record-video <bool>    Whether to record video (true|false)",
       "  --profile <name>         Profile name to use",
+      "  --asset-base-url <url>   Base URL prefix for assets in generated markdown",
       "  --var <key=value>        Variable override (can be repeated)",
       "",
       "Examples:",
