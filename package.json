@@ -23,15 +23,17 @@
     "build": "tsc -p tsconfig.build.json",
     "test": "vitest run",
     "lint": "eslint .",
+    "lint:python": "python -m ruff check python && pyright",
     "format": "prettier --check .",
+    "format:python": "python -m ruff format python",
     "format:write": "prettier --write .",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "scan:deps": "npm audit --audit-level=high",
-    "verify": "npm run format && npm run lint && npm run typecheck && npm test && npm run build && npm run scan:deps",
+    "verify": "npm run format && npm run lint && npm run typecheck && npm test && npm run build && npm run scan:deps && npm run lint:python",
     "run": "tsx src/cli.ts"
   },
   "dependencies": {
-    "@metyatech/automation-scenario-renderer": "git+https://github.com/metyatech/automation-scenario-renderer.git#5eab0bca0330303c7d0bac1631a4ab55461bed39"
+    "@metyatech/automation-scenario-renderer": "git+https://github.com/metyatech/automation-scenario-renderer.git#3df5e2aca50c1542db8a2511427d14653c19cbd1"
   },
   "devDependencies": {
     "@types/node": "^24.5.2",

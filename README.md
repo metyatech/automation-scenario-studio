@@ -53,7 +53,7 @@ Scenario format:
 Robot execution prerequisites:
 
 ```bash
-python -m pip install robotframework robotframework-seleniumlibrary selenium
+python -m pip install -r python/requirements.txt
 ```
 
 Annotation metadata can be emitted from Robot keywords by logging `DOCMETA:<json>` in `output.xml`.

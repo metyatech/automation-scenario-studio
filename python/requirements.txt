@@ -1,0 +1,8 @@
+# Core dependencies for Robot Framework
+robotframework>=7.0.0
+robotframework-seleniumlibrary>=6.5.0
+selenium>=4.20.0
+
+# Dev dependencies for linting and typechecking
+ruff>=0.6.0
+pyright>=1.1.380
