@@ -64,7 +64,9 @@ class DocStepVisitor(ResultVisitor):
         self.counter = 0
 
     def end_keyword(self, keyword):  # type: ignore[override]
-        if keyword.status != "PASS" or keyword.kwname not in DOC_KEYWORDS:
+        status = getattr(keyword, "status", "")
+        kwname = getattr(keyword, "kwname", "")
+        if status != "PASS" or kwname not in DOC_KEYWORDS:
             return
 
         self.counter += 1
