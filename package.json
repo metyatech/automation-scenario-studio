@@ -33,7 +33,7 @@
     "run": "tsx src/cli.ts"
   },
   "dependencies": {
-    "@metyatech/automation-scenario-renderer": "git+https://github.com/metyatech/automation-scenario-renderer.git#aaafdef726a5fe9cf00207effed3ad62f6c779dd"
+    "@metyatech/automation-scenario-renderer": "git+https://github.com/metyatech/automation-scenario-renderer.git#4e34028f78b8fd3595bb6618c8f9575ff4caca2d"
   },
   "devDependencies": {
     "@types/node": "^24.5.2",

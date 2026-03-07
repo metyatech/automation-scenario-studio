@@ -6,8 +6,10 @@ import { fileURLToPath } from "node:url";
 import {
   annotateImage,
   annotateVideo,
+  generateAnimation,
   renderMarkdownFromArtifacts,
 } from "@metyatech/automation-scenario-renderer";
+import type { AnimationConfig } from "@metyatech/automation-scenario-renderer";
 import type {
   AnnotationSpec,
   RunArtifacts,
@@ -28,6 +30,7 @@ export type RunRobotCommandOptions = {
   markdownPath?: string;
   recordVideo?: boolean;
   assetBaseUrl?: string;
+  animationConfig?: AnimationConfig;
 };
 
 export type RunScenarioCommandOptions = {
@@ -69,12 +72,14 @@ export async function runScenarioCommand(
     "utf8",
   );
 
+  const animationConfig = parseAnimationConfig(scenario.outputs);
   return runRobotCommand({
     suitePath: generatedSuitePath,
     outputDir,
     markdownPath: options.markdownPath,
     recordVideo: options.recordVideo,
     assetBaseUrl: options.assetBaseUrl,
+    animationConfig,
   });
 }
 
@@ -143,12 +148,36 @@ export async function runRobotCommand(
     artifacts.videoPath = await annotateStepVideo(artifacts, outputDir);
   }
 
+  let animationPath: string | undefined;
+  if (options.animationConfig) {
+    const ext = options.animationConfig.format === "webp" ? "webp" : "gif";
+    animationPath = join(
+      outputDir,
+      "animation",
+      `${artifacts.scenarioId}.${ext}`,
+    );
+    await generateAnimation(
+      artifacts.steps.map((s) => ({
+        id: s.id,
+        title: s.title,
+        imagePath: s.imagePath,
+        startedAtMs: s.startedAtMs,
+        endedAtMs: s.endedAtMs,
+      })),
+      animationPath,
+      options.animationConfig,
+    );
+  }
   const markdownPath = resolve(
     options.markdownPath ?? join(outputDir, `${artifacts.scenarioId}.md`),
   );
 
+  const rendererArtifacts = toRendererRunArtifacts(artifacts);
+  if (animationPath) {
+    rendererArtifacts.animationPath = animationPath;
+  }
   await renderMarkdownFromArtifacts(
-    toRendererRunArtifacts(artifacts),
+    rendererArtifacts,
     markdownPath,
     options.assetBaseUrl
       ? { assetBaseUrl: options.assetBaseUrl, outputDir }
@@ -619,4 +648,37 @@ function waitForExit(child: ChildProcess, errorPrefix?: string): Promise<void> {
       }
     });
   });
+}
+
+function parseAnimationConfig(
+  outputs: Record<string, unknown> | undefined,
+): AnimationConfig | undefined {
+  if (!outputs || typeof outputs !== "object") {
+    return undefined;
+  }
+  const animation = outputs.animation;
+  if (!animation || typeof animation !== "object") {
+    return undefined;
+  }
+  const config = animation as Record<string, unknown>;
+  if (config.enabled !== true) {
+    return undefined;
+  }
+  const format = config.format === "webp" ? "webp" : "gif";
+  const result: AnimationConfig = { format };
+  if (typeof config.fps === "number" && Number.isFinite(config.fps)) {
+    result.fps = config.fps;
+  }
+  if (
+    typeof config.max_duration_seconds === "number" &&
+    Number.isFinite(config.max_duration_seconds)
+  ) {
+    result.maxDurationSeconds = config.max_duration_seconds;
+  }
+  if (Array.isArray(config.step_ids)) {
+    result.stepIds = config.step_ids.filter(
+      (id): id is string => typeof id === "string",
+    );
+  }
+  return result;
 }
