@@ -14,6 +14,15 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
   - `--profile <name>`
   - `--var key=value` (repeatable)
 - Updated README with v2 action names and runtime override usage.
+  n### Added
+
+- `--asset-base-url` CLI flag for absolute URL paths in generated Markdown.
+- Animation generation from scenario `outputs.animation` config (GIF/WebP via ffmpeg).
+- `parseAnimationConfig()` helper for reading scenario animation settings.
+
+### Fixed
+
+- `screenshot_enabled` variable scoping: changed from `Set Variable` to `Set Suite Variable` in generated Robot suites.
 
 ## [0.1.0] - 2026-01-26
 

@@ -38,7 +38,7 @@ Source: github:metyatech/agent-rules@HEAD/rules/global/agent-rules-composition.m
 
 Source: github:metyatech/agent-rules@HEAD/rules/global/autonomous-operations.md
 
-﻿# Autonomous operations
+# Autonomous operations
 
 - Optimize for minimal human effort; default to automation over manual steps.
 - Drive work from the desired outcome: choose the highest-quality safe path and execute end-to-end.
